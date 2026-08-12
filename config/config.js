@@ -1,0 +1,82 @@
+require("dotenv").config();
+
+const PORT = process.env.PORT || 4000;
+const DEFAULT_SESSION_SECRET = "zealoop-dev-session-secret-change-in-production";
+const SESSION_SECRET = process.env.SESSION_SECRET || DEFAULT_SESSION_SECRET;
+
+// A guessable HMAC secret means anyone can mint a session cookie for any
+// account. Refuse to boot rather than run silently forgeable.
+if (process.env.NODE_ENV === "production" && SESSION_SECRET === DEFAULT_SESSION_SECRET) {
+    throw new Error("SESSION_SECRET must be set to a non-default value in production.");
+}
+
+module.exports = {
+    PORT,
+    MONGODB_URI: process.env.MONGODB_URI || "mongodb://localhost:27017/zealoop",
+    JWT_SECRET: process.env.JWT_SECRET || "change-me-in-production",
+
+    // ── dashboard sign-in ──
+    SESSION_SECRET,
+    SESSION_COOKIE: "zealoop_session",
+    OAUTH_STATE_COOKIE: "zealoop_oauth_state",
+    // Cookies can only carry the Secure flag where there is TLS; local dev is
+    // plain http, so forcing it on would mean the browser silently drops every
+    // session cookie and sign-in appears to do nothing.
+    COOKIE_SECURE: process.env.COOKIE_SECURE === "true" || process.env.NODE_ENV === "production",
+    // Where the dashboard lives — every post-auth redirect lands here.
+    APP_URL: process.env.APP_URL || "http://localhost:5173",
+    // Where this API answers. Must match the redirect URI registered with each
+    // OAuth provider exactly, port included.
+    API_URL: process.env.API_URL || `http://localhost:${PORT}`,
+    DISABLE_SIGNUPS: process.env.DISABLE_SIGNUPS === "true",
+
+    // ── OAuth providers (optional — the buttons hide themselves when unset) ──
+    GOOGLE_CLIENT_ID: process.env.GOOGLE_CLIENT_ID || "",
+    GOOGLE_CLIENT_SECRET: process.env.GOOGLE_CLIENT_SECRET || "",
+    GITHUB_CLIENT_ID: process.env.GITHUB_CLIENT_ID || "",
+    GITHUB_CLIENT_SECRET: process.env.GITHUB_CLIENT_SECRET || "",
+
+    // 32-byte hex key for AES-256-GCM
+    ENCRYPTION_KEY: process.env.ENCRYPTION_KEY || "0000000000000000000000000000000000000000000000000000000000000000",
+    SENTRY_DSN: process.env.SENTRY_DSN || "",
+
+    OPENROUTER_API_KEY: process.env.OPENROUTER_API_KEY || "",
+    OPENROUTER_BASE_URL: process.env.OPENROUTER_BASE_URL || "https://openrouter.ai/api/v1",
+    // OpenRouter is OpenAI-compatible, so these can be any slug it serves
+    SMALL_MODEL: process.env.SMALL_MODEL || "anthropic/claude-haiku-4.5",
+    LARGE_MODEL: process.env.LARGE_MODEL || "anthropic/claude-sonnet-5",
+    // Must produce vectors matching EMBEDDING_DIM. Gemini Embedding 2 has
+    // flexible output dims (128–3072); we request EMBEDDING_DIM explicitly.
+    EMBED_MODEL: process.env.EMBED_MODEL || "google/gemini-embedding-2",
+    // Optional. No key → rerank throws → pipeline degrades to fusion order.
+    VOYAGE_API_KEY: process.env.VOYAGE_API_KEY || "",
+    RERANK_MODEL: "rerank-2.5",
+    EMBEDDING_DIM: 1024,
+
+    // Retrieval
+    VECTOR_INDEX_NAME: "chunk_vector_index",
+    TEXT_INDEX_NAME: "chunk_text_index",
+    FUSION_K: 60,
+    RETRIEVAL_CANDIDATES: 40,
+    RERANK_TOP_N: 5,
+    RERANK_THRESHOLD: 0.55,
+
+    // Chunking
+    CHUNK_TARGET_TOKENS: 600,
+    CHUNK_OVERLAP_RATIO: 0.15,
+
+    // Generation
+    MAX_TOOL_ITERATIONS: 4,
+    MAX_OUTPUT_TOKENS: 1024,
+
+    // Pricing per million tokens, used by estimateCostUsd
+    PRICE_PER_MTOK: {
+        "anthropic/claude-haiku-4.5": { input: 1, output: 5 },
+        "anthropic/claude-sonnet-5": { input: 3, output: 15 },
+    },
+
+    CORS_DASHBOARD_ORIGINS: (process.env.CORS_DASHBOARD_ORIGINS || "http://localhost:5173").split(","),
+    JSON_BODY_LIMIT: "1mb",
+    RESOLUTION_CRON: "*/15 * * * *",
+    RESOLUTION_WINDOW_HOURS: 24,
+};
