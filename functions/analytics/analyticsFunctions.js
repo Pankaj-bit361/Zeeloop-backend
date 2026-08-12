@@ -13,7 +13,9 @@ class AnalyticsFunctions {
             if (!orgId) {
                 return { status: 400, json: { success: false, error: "Invalid request. Please pass orgId" } };
             }
-            const windowDays = Math.min(Math.max(parseInt(days, 10) || 7, 1), 90);
+            // `|| 7` would treat days=0 as "not provided" (0 is falsy) instead of clamping it to 1.
+            const parsedDays = parseInt(days, 10);
+            const windowDays = Math.min(Math.max(Number.isNaN(parsedDays) ? 7 : parsedDays, 1), 90);
             const since = new Date(Date.now() - windowDays * 24 * 60 * 60 * 1000);
 
             const seriesSince = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000);
@@ -124,7 +126,8 @@ class AnalyticsFunctions {
             if (!orgId) {
                 return { status: 400, json: { success: false, error: "Invalid request. Please pass orgId" } };
             }
-            const windowDays = Math.min(Math.max(parseInt(days, 10) || 30, 1), 90);
+            const parsedDays = parseInt(days, 10);
+            const windowDays = Math.min(Math.max(Number.isNaN(parsedDays) ? 30 : parsedDays, 1), 90);
             const since = new Date(Date.now() - windowDays * 24 * 60 * 60 * 1000);
 
             const gaps = await TurnTrace.aggregate([

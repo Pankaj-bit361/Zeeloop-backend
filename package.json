@@ -8,7 +8,8 @@
         "dev": "node --watch server.js",
         "start": "node server.js",
         "seed": "node scripts/seed.js",
-        "reset": "node scripts/reset.js"
+        "reset": "node scripts/reset.js",
+        "test": "node --test tests/**/*.test.js"
     },
     "dependencies": {
         "cookie-parser": "^1.4.7",
