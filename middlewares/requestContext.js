@@ -4,7 +4,8 @@ const generalFunctions = require("../functions/utilFunctions/generalFunctions");
 // Requiring the agent again is free — Node returns the cached module from the
 // load server.js already did. Null when unlicensed, so every call site below
 // has to null-check rather than assume the agent is present.
-const newrelic = process.env.NEW_RELIC_LICENSE_KEY ? require("newrelic") : null;
+const newrelic =
+    process.env.NEW_RELIC_LICENSE_KEY && process.env.NEW_RELIC_ENABLED !== "false" ? require("newrelic") : null;
 
 const storage = new AsyncLocalStorage();
 

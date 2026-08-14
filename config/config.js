@@ -43,6 +43,10 @@ module.exports = {
     // agent has to load before this module does. Mirrored here for visibility.
     NEW_RELIC_LICENSE_KEY: process.env.NEW_RELIC_LICENSE_KEY || "",
     NEW_RELIC_APP_NAME: process.env.NEW_RELIC_APP_NAME || "zealoop-backend",
+    // Lets the test run opt out even when a key is present in .env. Without
+    // this every `npm test` boots the agent, spends six seconds probing cloud
+    // metadata endpoints, and reports test traffic as production data.
+    NEW_RELIC_ENABLED: process.env.NEW_RELIC_ENABLED !== "false",
 
     OPENROUTER_API_KEY: process.env.OPENROUTER_API_KEY || "",
     OPENROUTER_BASE_URL: process.env.OPENROUTER_BASE_URL || "https://openrouter.ai/api/v1",
@@ -78,6 +82,38 @@ module.exports = {
         "anthropic/claude-haiku-4.5": { input: 1, output: 5 },
         "anthropic/claude-sonnet-5": { input: 3, output: 15 },
     },
+
+    // ── Billing ──────────────────────────────────────────────────────
+    // Which adapter functions/billing/providers resolves. NONE means checkout
+    // returns 503 and everything stays on the free plan — the backend must run
+    // without a payment provider, same as it runs without Sentry.
+    BILLING_PROVIDER: process.env.BILLING_PROVIDER || "NONE",
+    LEMON_SQUEEZY_API_KEY: process.env.LEMON_SQUEEZY_API_KEY || "",
+    LEMON_SQUEEZY_STORE_ID: process.env.LEMON_SQUEEZY_STORE_ID || "",
+    LEMON_SQUEEZY_WEBHOOK_SECRET: process.env.LEMON_SQUEEZY_WEBHOOK_SECRET || "",
+    // One variant id per paid plan, from the provider dashboard. Keyed by PlanId
+    // so plans.js stays provider-agnostic.
+    BILLING_VARIANT_IDS: {
+        STARTER: process.env.BILLING_VARIANT_STARTER || "",
+        GROWTH: process.env.BILLING_VARIANT_GROWTH || "",
+        SCALE: process.env.BILLING_VARIANT_SCALE || "",
+    },
+
+    // ── Abuse and cost control (§8.2) ────────────────────────────────
+    // Widget endpoints are public by design, so these are the only thing
+    // between a scraped publicKey and an unbounded model bill.
+    RATE_LIMIT_WINDOW_MS: Number(process.env.RATE_LIMIT_WINDOW_MS || 60_000),
+    RATE_LIMIT_PER_END_USER: Number(process.env.RATE_LIMIT_PER_END_USER || 20),
+    RATE_LIMIT_PER_ORG: Number(process.env.RATE_LIMIT_PER_ORG || 300),
+    RATE_LIMIT_PER_IP: Number(process.env.RATE_LIMIT_PER_IP || 60),
+
+    // ── Data handling (§8.1) ─────────────────────────────────────────
+    // Conversations and traces older than this are purged by cron. 0 disables.
+    RETENTION_DAYS: Number(process.env.RETENTION_DAYS || 0),
+    RETENTION_CRON: process.env.RETENTION_CRON || "0 3 * * *",
+    // Redact emails, phone numbers and card-shaped digits before anything is
+    // written to TurnTrace or sent to a model provider.
+    PII_REDACTION_ENABLED: process.env.PII_REDACTION_ENABLED !== "false",
 
     CORS_DASHBOARD_ORIGINS: (process.env.CORS_DASHBOARD_ORIGINS || "http://localhost:5173").split(","),
     JSON_BODY_LIMIT: "1mb",

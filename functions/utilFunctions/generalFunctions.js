@@ -16,7 +16,7 @@ if (config.SENTRY_DSN) {
 // Same deal for New Relic. server.js has already loaded the agent by the time
 // this module is required, so this just picks up the cached instance.
 let newrelic = null;
-if (config.NEW_RELIC_LICENSE_KEY) {
+if (config.NEW_RELIC_LICENSE_KEY && config.NEW_RELIC_ENABLED) {
     try {
         newrelic = require("newrelic");
     } catch (error) {

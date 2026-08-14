@@ -3,7 +3,7 @@
 // config/config.js, purely so the license key is readable at this point.
 // No key means no agent: the backend must run without it, same as Sentry.
 require("dotenv").config();
-if (process.env.NEW_RELIC_LICENSE_KEY) {
+if (process.env.NEW_RELIC_LICENSE_KEY && process.env.NEW_RELIC_ENABLED !== "false") {
     require("newrelic");
 }
 
@@ -26,6 +26,8 @@ const authRoutes = require("./routes/authRoutes");
 const oauthRoutes = require("./routes/oauthRoutes");
 const orgRoutes = require("./routes/orgRoutes");
 const tableRoutes = require("./routes/tableRoutes");
+const billingRoutes = require("./routes/billingRoutes");
+const webhookRoutes = require("./routes/webhookRoutes");
 const { requestContext } = require("./middlewares/requestContext");
 
 const app = express();
@@ -34,7 +36,19 @@ const app = express();
 // the request id to already exist.
 app.use(requestContext);
 app.use(helmet());
-app.use(express.json({ limit: config.JSON_BODY_LIMIT }));
+// The verify hook keeps the exact bytes for webhook signature checking. HMACs
+// are computed over what the provider sent, and re-serialising the parsed JSON
+// produces different bytes — different key order, different whitespace — so a
+// signature checked against it never matches. Capped so a large upload cannot
+// be retained twice.
+app.use(
+    express.json({
+        limit: config.JSON_BODY_LIMIT,
+        verify: (req, res, buf) => {
+            if (buf && buf.length && buf.length <= 1_000_000) req.rawBody = buf;
+        },
+    })
+);
 app.use(cookieParser());
 
 // Widget routes are public and CORS * — the whole point is running on customer sites.
@@ -58,6 +72,11 @@ app.get("/health", (req, res) => res.status(200).json({ success: true, status: "
 // registered as ${API_URL}/auth/<provider>/callback and every hop is a top-level
 // navigation, never a cross-origin fetch.
 app.use("/auth", oauthRoutes);
+
+// Provider webhooks. Root-mounted and CORS-free for the same reason as OAuth:
+// these are server-to-server posts whose URL is registered with the provider,
+// and the signature is the credential.
+app.use("/webhooks", webhookRoutes);
 
 app.use("/api/widget", widgetCors, widgetRoutes);
 
@@ -98,6 +117,7 @@ app.use("/api/org", dashboardCors, actionRoutes);
 app.use("/api/org", dashboardCors, conversationRoutes);
 app.use("/api/org", dashboardCors, tableRoutes);
 app.use("/api/org", dashboardCors, orgRoutes);
+app.use("/api/org", dashboardCors, billingRoutes);
 app.use("/api/analytics", dashboardCors, analyticsRoutes);
 
 app.use((req, res) => {

@@ -137,6 +137,65 @@ const OnboardingStep = {
     ACTIONS: "ACTIONS",
 };
 
+// Billing plans. The id is what is stored on Subscription and what the plan
+// registry in config/plans.js is keyed by, so renaming one is a migration.
+const PlanId = {
+    FREE: "FREE",
+    STARTER: "STARTER",
+    GROWTH: "GROWTH",
+    SCALE: "SCALE",
+};
+
+// Capabilities a plan can grant. Gating reads these, never the plan id — so a
+// pricing change is a registry edit rather than a hunt through conditionals.
+const FeatureKey = {
+    KNOWLEDGE: "KNOWLEDGE",
+    TABLES: "TABLES",
+    ACTIONS: "ACTIONS",
+    PROCEDURES: "PROCEDURES",
+    EMAIL_CHANNEL: "EMAIL_CHANNEL",
+    COPILOT: "COPILOT",
+    PUBLIC_API: "PUBLIC_API",
+    REMOVE_BRANDING: "REMOVE_BRANDING",
+};
+
+// Mirrors the states every provider models, rather than any one provider's
+// vocabulary. The adapter maps its own strings onto these.
+const SubscriptionStatus = {
+    TRIALING: "TRIALING",
+    ACTIVE: "ACTIVE",
+    PAST_DUE: "PAST_DUE",
+    CANCELLED: "CANCELLED",
+    EXPIRED: "EXPIRED",
+};
+
+const BillingProvider = {
+    LEMON_SQUEEZY: "LEMON_SQUEEZY",
+    PADDLE: "PADDLE",
+    // No provider — free plans and anything seeded locally.
+    NONE: "NONE",
+};
+
+// Result of the quota check for one org in the current period.
+const QuotaState = {
+    OK: "OK",
+    // Past the soft threshold: still serving, but the dashboard warns.
+    WARNING: "WARNING",
+    // Past the hard limit: the widget degrades gracefully, dashboard explains.
+    EXCEEDED: "EXCEEDED",
+};
+
+// Why a request was refused before it reached the pipeline. Distinct from
+// BlockReason, which is about a tool call the model proposed.
+const LimitReason = {
+    QUOTA_EXCEEDED: "QUOTA_EXCEEDED",
+    COST_CEILING: "COST_CEILING",
+    RATE_LIMITED: "RATE_LIMITED",
+    BLOCKED_IDENTITY: "BLOCKED_IDENTITY",
+    PLAN_FEATURE: "PLAN_FEATURE",
+    PLAN_LIMIT: "PLAN_LIMIT",
+};
+
 const IdPrefix = {
     ORG: "org",
     MEMBER: "mem",
@@ -156,6 +215,9 @@ const IdPrefix = {
     CONVERSATION: "conv",
     MESSAGE: "msg",
     TURN_TRACE: "trc",
+    SUBSCRIPTION: "sub",
+    USAGE_RECORD: "usg",
+    WEBHOOK_EVENT: "whk",
 };
 
 module.exports = {
@@ -179,5 +241,11 @@ module.exports = {
     AuthProvider,
     TokenPurpose,
     OnboardingStep,
+    PlanId,
+    FeatureKey,
+    SubscriptionStatus,
+    BillingProvider,
+    QuotaState,
+    LimitReason,
     IdPrefix,
 };
