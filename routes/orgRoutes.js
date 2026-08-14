@@ -12,8 +12,8 @@ router.get("/:orgId/settings", reqOrgOwnerAuth, async (req, res) => {
         const { status, json } = await orgFunctions.getSettings({ orgId: req.params.orgId });
         return res.status(status).json(json);
     } catch (error) {
-        console.log(`Org router ${req.path} catch block`);
-        console.log(error);
+        console.error(`Org router ${req.path} catch block`);
+        console.error(error);
         generalFunctions.captureSentryException(error);
         return res.status(500).json({ success: false, error: "Internal server error, please contact support" });
     }
@@ -38,8 +38,8 @@ router.patch("/:orgId/settings", reqOrgOwnerAuth, async (req, res) => {
         });
         return res.status(status).json(json);
     } catch (error) {
-        console.log(`Org router ${req.path} catch block`);
-        console.log(error);
+        console.error(`Org router ${req.path} catch block`);
+        console.error(error);
         generalFunctions.captureSentryException(error);
         return res.status(500).json({ success: false, error: "Internal server error, please contact support" });
     }
@@ -50,8 +50,8 @@ router.post("/:orgId/widget-secret/reveal", reqOrgOwnerAuth, async (req, res) =>
         const { status, json } = await orgFunctions.revealSecret({ orgId: req.params.orgId });
         return res.status(status).json(json);
     } catch (error) {
-        console.log(`Org router ${req.path} catch block`);
-        console.log(error);
+        console.error(`Org router ${req.path} catch block`);
+        console.error(error);
         generalFunctions.captureSentryException(error);
         return res.status(500).json({ success: false, error: "Internal server error, please contact support" });
     }
@@ -62,8 +62,8 @@ router.post("/:orgId/widget-secret/rotate", reqOrgOwnerAuth, async (req, res) =>
         const { status, json } = await orgFunctions.rotateSecret({ orgId: req.params.orgId });
         return res.status(status).json(json);
     } catch (error) {
-        console.log(`Org router ${req.path} catch block`);
-        console.log(error);
+        console.error(`Org router ${req.path} catch block`);
+        console.error(error);
         generalFunctions.captureSentryException(error);
         return res.status(500).json({ success: false, error: "Internal server error, please contact support" });
     }
@@ -74,8 +74,8 @@ router.get("/:orgId/onboarding", reqOrgOwnerAuth, async (req, res) => {
         const { status, json } = await orgFunctions.getOnboarding({ orgId: req.params.orgId });
         return res.status(status).json(json);
     } catch (error) {
-        console.log(`Org router ${req.path} catch block`);
-        console.log(error);
+        console.error(`Org router ${req.path} catch block`);
+        console.error(error);
         generalFunctions.captureSentryException(error);
         return res.status(500).json({ success: false, error: "Internal server error, please contact support" });
     }
@@ -86,8 +86,8 @@ router.get("/:orgId/me", reqOrgOwnerAuth, async (req, res) => {
         const { status, json } = await memberFunctions.getMe({ orgId: req.params.orgId, email: req.auth.email });
         return res.status(status).json(json);
     } catch (error) {
-        console.log(`Org router ${req.path} catch block`);
-        console.log(error);
+        console.error(`Org router ${req.path} catch block`);
+        console.error(error);
         generalFunctions.captureSentryException(error);
         return res.status(500).json({ success: false, error: "Internal server error, please contact support" });
     }
@@ -103,8 +103,8 @@ router.patch("/:orgId/me", reqOrgOwnerAuth, async (req, res) => {
         });
         return res.status(status).json(json);
     } catch (error) {
-        console.log(`Org router ${req.path} catch block`);
-        console.log(error);
+        console.error(`Org router ${req.path} catch block`);
+        console.error(error);
         generalFunctions.captureSentryException(error);
         return res.status(500).json({ success: false, error: "Internal server error, please contact support" });
     }
@@ -115,8 +115,8 @@ router.get("/:orgId/members", reqOrgOwnerAuth, async (req, res) => {
         const { status, json } = await memberFunctions.listMembers({ orgId: req.params.orgId });
         return res.status(status).json(json);
     } catch (error) {
-        console.log(`Org router ${req.path} catch block`);
-        console.log(error);
+        console.error(`Org router ${req.path} catch block`);
+        console.error(error);
         generalFunctions.captureSentryException(error);
         return res.status(500).json({ success: false, error: "Internal server error, please contact support" });
     }
@@ -131,8 +131,8 @@ router.post("/:orgId/members", reqOrgOwnerAuth, async (req, res) => {
         });
         return res.status(status).json(json);
     } catch (error) {
-        console.log(`Org router ${req.path} catch block`);
-        console.log(error);
+        console.error(`Org router ${req.path} catch block`);
+        console.error(error);
         generalFunctions.captureSentryException(error);
         return res.status(500).json({ success: false, error: "Internal server error, please contact support" });
     }
@@ -146,8 +146,8 @@ router.delete("/:orgId/members/:memberId", reqOrgOwnerAuth, async (req, res) => 
         });
         return res.status(status).json(json);
     } catch (error) {
-        console.log(`Org router ${req.path} catch block`);
-        console.log(error);
+        console.error(`Org router ${req.path} catch block`);
+        console.error(error);
         generalFunctions.captureSentryException(error);
         return res.status(500).json({ success: false, error: "Internal server error, please contact support" });
     }
@@ -164,8 +164,8 @@ router.get("/:orgId/users", reqOrgOwnerAuth, async (req, res) => {
         });
         return res.status(status).json(json);
     } catch (error) {
-        console.log(`Org router ${req.path} catch block`);
-        console.log(error);
+        console.error(`Org router ${req.path} catch block`);
+        console.error(error);
         generalFunctions.captureSentryException(error);
         return res.status(500).json({ success: false, error: "Internal server error, please contact support" });
     }
@@ -179,8 +179,8 @@ router.get("/:orgId/users/:endUserId", reqOrgOwnerAuth, async (req, res) => {
         });
         return res.status(status).json(json);
     } catch (error) {
-        console.log(`Org router ${req.path} catch block`);
-        console.log(error);
+        console.error(`Org router ${req.path} catch block`);
+        console.error(error);
         generalFunctions.captureSentryException(error);
         return res.status(500).json({ success: false, error: "Internal server error, please contact support" });
     }

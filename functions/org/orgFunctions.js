@@ -29,8 +29,8 @@ class OrgFunctions {
             data.widgetSecretMasked = this._maskSecret(org.widgetSecret);
             return { status: 200, json: { success: true, data } };
         } catch (error) {
-            console.log("OrgFunctions:getSettings: Catch block");
-            console.log(error);
+            console.error("OrgFunctions:getSettings: Catch block");
+            console.error(error);
             generalFunctions.captureSentryException(error);
             return { status: 500, json: { success: false, error: "Internal server error, please contact support" } };
         }
@@ -116,8 +116,8 @@ class OrgFunctions {
             data.widgetSecretMasked = this._maskSecret(org.widgetSecret);
             return { status: 200, json: { success: true, data } };
         } catch (error) {
-            console.log("OrgFunctions:updateSettings: Catch block");
-            console.log(error);
+            console.error("OrgFunctions:updateSettings: Catch block");
+            console.error(error);
             generalFunctions.captureSentryException(error);
             return { status: 500, json: { success: false, error: "Internal server error, please contact support" } };
         }
@@ -146,8 +146,8 @@ class OrgFunctions {
             }
             return { status: 200, json: { success: true, data: { widgetSecret: plaintext } } };
         } catch (error) {
-            console.log("OrgFunctions:revealSecret: Catch block");
-            console.log(error);
+            console.error("OrgFunctions:revealSecret: Catch block");
+            console.error(error);
             generalFunctions.captureSentryException(error);
             return { status: 500, json: { success: false, error: "Internal server error, please contact support" } };
         }
@@ -182,8 +182,8 @@ class OrgFunctions {
                 },
             };
         } catch (error) {
-            console.log("OrgFunctions:rotateSecret: Catch block");
-            console.log(error);
+            console.error("OrgFunctions:rotateSecret: Catch block");
+            console.error(error);
             generalFunctions.captureSentryException(error);
             return { status: 500, json: { success: false, error: "Internal server error, please contact support" } };
         }
@@ -254,8 +254,8 @@ class OrgFunctions {
                 },
             };
         } catch (error) {
-            console.log("OrgFunctions:getOnboarding: Catch block");
-            console.log(error);
+            console.error("OrgFunctions:getOnboarding: Catch block");
+            console.error(error);
             generalFunctions.captureSentryException(error);
             return { status: 500, json: { success: false, error: "Internal server error, please contact support" } };
         }

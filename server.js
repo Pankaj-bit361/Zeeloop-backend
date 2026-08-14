@@ -1,3 +1,12 @@
+// The New Relic agent patches express, mongoose and http at require time, so it
+// has to load before any of them — hence dotenv up here too, ahead of
+// config/config.js, purely so the license key is readable at this point.
+// No key means no agent: the backend must run without it, same as Sentry.
+require("dotenv").config();
+if (process.env.NEW_RELIC_LICENSE_KEY) {
+    require("newrelic");
+}
+
 const path = require("path");
 const express = require("express");
 const mongoose = require("mongoose");
@@ -17,9 +26,13 @@ const authRoutes = require("./routes/authRoutes");
 const oauthRoutes = require("./routes/oauthRoutes");
 const orgRoutes = require("./routes/orgRoutes");
 const tableRoutes = require("./routes/tableRoutes");
+const { requestContext } = require("./middlewares/requestContext");
 
 const app = express();
 
+// First in the chain: everything downstream, including the error handler, needs
+// the request id to already exist.
+app.use(requestContext);
 app.use(helmet());
 app.use(express.json({ limit: config.JSON_BODY_LIMIT }));
 app.use(cookieParser());
@@ -85,9 +98,10 @@ app.use((req, res) => {
 
 // Global error handler — the last line of defense.
 app.use((error, req, res, next) => {
-    console.log("Server: global error handler");
-    console.log(error);
+    console.error("Server: global error handler");
+    console.error(error);
     generalFunctions.captureSentryException(error);
+    // requestContext stamps requestId onto any 5xx body on the way out.
     return res.status(500).json({ success: false, error: "Internal server error, please contact support" });
 });
 
@@ -97,8 +111,8 @@ async function connectWithRetry() {
         await mongoose.connect(config.MONGODB_URI, { serverSelectionTimeoutMS: 5000 });
         console.log("Server: connected to MongoDB");
     } catch (error) {
-        console.log("Server: MongoDB connection failed, retrying in 5s");
-        console.log(error.message);
+        console.error("Server: MongoDB connection failed, retrying in 5s");
+        console.error(error.message);
         setTimeout(connectWithRetry, 5000);
     }
 }

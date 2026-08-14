@@ -10,8 +10,8 @@ router.get("/:orgId/sources", reqOrgOwnerAuth, async (req, res) => {
         const { status, json } = await knowledgeFunctions.listSources({ orgId: req.params.orgId });
         return res.status(status).json(json);
     } catch (error) {
-        console.log(`Knowledge router ${req.path} catch block`);
-        console.log(error);
+        console.error(`Knowledge router ${req.path} catch block`);
+        console.error(error);
         generalFunctions.captureSentryException(error);
         return res.status(500).json({ success: false, error: "Internal server error, please contact support" });
     }
@@ -28,8 +28,8 @@ router.post("/:orgId/sources", reqOrgOwnerAuth, async (req, res) => {
         });
         return res.status(status).json(json);
     } catch (error) {
-        console.log(`Knowledge router ${req.path} catch block`);
-        console.log(error);
+        console.error(`Knowledge router ${req.path} catch block`);
+        console.error(error);
         generalFunctions.captureSentryException(error);
         return res.status(500).json({ success: false, error: "Internal server error, please contact support" });
     }
@@ -43,8 +43,8 @@ router.delete("/:orgId/sources/:sourceId", reqOrgOwnerAuth, async (req, res) => 
         });
         return res.status(status).json(json);
     } catch (error) {
-        console.log(`Knowledge router ${req.path} catch block`);
-        console.log(error);
+        console.error(`Knowledge router ${req.path} catch block`);
+        console.error(error);
         generalFunctions.captureSentryException(error);
         return res.status(500).json({ success: false, error: "Internal server error, please contact support" });
     }
@@ -58,8 +58,8 @@ router.post("/:orgId/sources/:sourceId/resync", reqOrgOwnerAuth, async (req, res
         });
         return res.status(status).json(json);
     } catch (error) {
-        console.log(`Knowledge router ${req.path} catch block`);
-        console.log(error);
+        console.error(`Knowledge router ${req.path} catch block`);
+        console.error(error);
         generalFunctions.captureSentryException(error);
         return res.status(500).json({ success: false, error: "Internal server error, please contact support" });
     }
@@ -75,8 +75,8 @@ router.get("/:orgId/chunks", reqOrgOwnerAuth, async (req, res) => {
         });
         return res.status(status).json(json);
     } catch (error) {
-        console.log(`Knowledge router ${req.path} catch block`);
-        console.log(error);
+        console.error(`Knowledge router ${req.path} catch block`);
+        console.error(error);
         generalFunctions.captureSentryException(error);
         return res.status(500).json({ success: false, error: "Internal server error, please contact support" });
     }

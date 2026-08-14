@@ -956,7 +956,7 @@ async function seed() {
 
 seed().catch(async (error) => {
     console.log("seed: failed");
-    console.log(error);
+    console.error(error);
     await mongoose.disconnect();
     process.exit(1);
 });

@@ -58,8 +58,8 @@ class UserFunctions {
                 json: { success: true, data, total, identifiedCount, temporaryCount, page: pageNum, limit: pageSize },
             };
         } catch (error) {
-            console.log("UserFunctions:listUsers: Catch block");
-            console.log(error);
+            console.error("UserFunctions:listUsers: Catch block");
+            console.error(error);
             generalFunctions.captureSentryException(error);
             return { status: 500, json: { success: false, error: "Internal server error, please contact support" } };
         }
@@ -118,8 +118,8 @@ class UserFunctions {
                 },
             };
         } catch (error) {
-            console.log("UserFunctions:getUser: Catch block");
-            console.log(error);
+            console.error("UserFunctions:getUser: Catch block");
+            console.error(error);
             generalFunctions.captureSentryException(error);
             return { status: 500, json: { success: false, error: "Internal server error, please contact support" } };
         }

@@ -51,8 +51,8 @@ class AgentFunctions {
         try {
             result = await this._runPipeline({ org, conversation, endUser, identityVerified, rawMessage, history, trace });
         } catch (error) {
-            console.log("AgentFunctions:runTurn: Catch block");
-            console.log(error);
+            console.error("AgentFunctions:runTurn: Catch block");
+            console.error(error);
             generalFunctions.captureSentryException(error);
             trace.outcome = TurnOutcome.ERROR;
             result = {
@@ -243,7 +243,7 @@ class AgentFunctions {
         } catch (error) {
             // Fail open with safe defaults — a classifier outage must not take the product down.
             console.log("AgentFunctions:_runGate: failed open");
-            console.log(error);
+            console.error(error);
             generalFunctions.captureSentryException(error);
             trace.gateFailedOpen = true;
             return { language: "en", intent: GateIntent.QUESTION, sentiment: GateSentiment.NEUTRAL, safe: true };
@@ -262,7 +262,7 @@ class AgentFunctions {
             return result.text.trim();
         } catch (error) {
             console.log("AgentFunctions:_runChitchat: fallback greeting");
-            console.log(error);
+            console.error(error);
             generalFunctions.captureSentryException(error);
             return `Hi! I'm ${org.agent.name}. How can I help you today?`;
         }
@@ -294,7 +294,7 @@ class AgentFunctions {
         } catch (error) {
             // Rewrite fails → use the raw message.
             console.log("AgentFunctions:_runRewrite: failed, using raw message");
-            console.log(error);
+            console.error(error);
             generalFunctions.captureSentryException(error);
             return rawMessage;
         }
@@ -309,7 +309,7 @@ class AgentFunctions {
             queryEmbedding = embeddings[0];
         } catch (error) {
             console.log("AgentFunctions:_hybridSearch: embed failed, text-only search");
-            console.log(error);
+            console.error(error);
             generalFunctions.captureSentryException(error);
         }
 
@@ -366,7 +366,7 @@ class AgentFunctions {
         } catch (error) {
             // Index missing (local Mongo, fresh Atlas cluster) → empty, not a crash
             console.log("AgentFunctions:_vectorSearch: index unavailable, returning empty");
-            console.log(error.message);
+            console.error(error.message);
             return [];
         }
     }
@@ -398,7 +398,7 @@ class AgentFunctions {
             return results;
         } catch (error) {
             console.log("AgentFunctions:_textSearch: index unavailable, using keyword fallback");
-            console.log(error.message);
+            console.error(error.message);
             return this._keywordSearch({ orgId, query });
         }
     }
@@ -449,8 +449,8 @@ class AgentFunctions {
                 .sort((a, b) => b.textScore - a.textScore)
                 .slice(0, config.RETRIEVAL_CANDIDATES);
         } catch (error) {
-            console.log("AgentFunctions:_keywordSearch: Catch block");
-            console.log(error.message);
+            console.error("AgentFunctions:_keywordSearch: Catch block");
+            console.error(error.message);
             return [];
         }
     }
@@ -509,7 +509,7 @@ class AgentFunctions {
             // Rerank fails → degrade to fusion order and SKIP the threshold check.
             // Validation still runs downstream.
             console.log("AgentFunctions:_runRerank: failed, degrading to fusion order");
-            console.log(error);
+            console.error(error);
             generalFunctions.captureSentryException(error);
             return { topChunks: candidates.slice(0, config.RERANK_TOP_N), belowThreshold: false };
         }
@@ -660,7 +660,7 @@ class AgentFunctions {
         } catch (error) {
             // Fail closed — a validator outage must never become an unvalidated answer.
             console.log("AgentFunctions:_runValidate: failed closed");
-            console.log(error);
+            console.error(error);
             generalFunctions.captureSentryException(error);
             return { grounded: false, answersQuery: false, unsupportedClaims: [] };
         }
@@ -748,8 +748,8 @@ class AgentFunctions {
         try {
             await TurnTrace.create(trace);
         } catch (error) {
-            console.log("AgentFunctions:_writeTrace: Catch block");
-            console.log(error);
+            console.error("AgentFunctions:_writeTrace: Catch block");
+            console.error(error);
             generalFunctions.captureSentryException(error);
         }
     }

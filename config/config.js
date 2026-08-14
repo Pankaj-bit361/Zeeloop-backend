@@ -39,6 +39,10 @@ module.exports = {
     // 32-byte hex key for AES-256-GCM
     ENCRYPTION_KEY: process.env.ENCRYPTION_KEY || "0000000000000000000000000000000000000000000000000000000000000000",
     SENTRY_DSN: process.env.SENTRY_DSN || "",
+    // Read directly from process.env in server.js and requestContext.js — the
+    // agent has to load before this module does. Mirrored here for visibility.
+    NEW_RELIC_LICENSE_KEY: process.env.NEW_RELIC_LICENSE_KEY || "",
+    NEW_RELIC_APP_NAME: process.env.NEW_RELIC_APP_NAME || "zealoop-backend",
 
     OPENROUTER_API_KEY: process.env.OPENROUTER_API_KEY || "",
     OPENROUTER_BASE_URL: process.env.OPENROUTER_BASE_URL || "https://openrouter.ai/api/v1",

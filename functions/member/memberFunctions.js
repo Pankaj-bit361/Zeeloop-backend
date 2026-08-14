@@ -20,8 +20,8 @@ class MemberFunctions {
             await Member.updateOne({ memberId: result.member.memberId }, { lastActiveAt: new Date() });
             return { status: 200, json: { success: true, data: result.member } };
         } catch (error) {
-            console.log("MemberFunctions:getMe: Catch block");
-            console.log(error);
+            console.error("MemberFunctions:getMe: Catch block");
+            console.error(error);
             generalFunctions.captureSentryException(error);
             return { status: 500, json: { success: false, error: "Internal server error, please contact support" } };
         }
@@ -51,8 +51,8 @@ class MemberFunctions {
             );
             return { status: 200, json: { success: true, data: member } };
         } catch (error) {
-            console.log("MemberFunctions:updateMe: Catch block");
-            console.log(error);
+            console.error("MemberFunctions:updateMe: Catch block");
+            console.error(error);
             generalFunctions.captureSentryException(error);
             return { status: 500, json: { success: false, error: "Internal server error, please contact support" } };
         }
@@ -68,8 +68,8 @@ class MemberFunctions {
             const members = await Member.find({ orgId }).sort({ createdAt: 1 });
             return { status: 200, json: { success: true, data: members, total: members.length } };
         } catch (error) {
-            console.log("MemberFunctions:listMembers: Catch block");
-            console.log(error);
+            console.error("MemberFunctions:listMembers: Catch block");
+            console.error(error);
             generalFunctions.captureSentryException(error);
             return { status: 500, json: { success: false, error: "Internal server error, please contact support" } };
         }
@@ -107,8 +107,8 @@ class MemberFunctions {
             });
             return { status: 201, json: { success: true, data: member } };
         } catch (error) {
-            console.log("MemberFunctions:inviteMember: Catch block");
-            console.log(error);
+            console.error("MemberFunctions:inviteMember: Catch block");
+            console.error(error);
             generalFunctions.captureSentryException(error);
             return { status: 500, json: { success: false, error: "Internal server error, please contact support" } };
         }
@@ -131,8 +131,8 @@ class MemberFunctions {
             await Member.deleteOne({ orgId, memberId });
             return { status: 200, json: { success: true, data: { memberId } } };
         } catch (error) {
-            console.log("MemberFunctions:removeMember: Catch block");
-            console.log(error);
+            console.error("MemberFunctions:removeMember: Catch block");
+            console.error(error);
             generalFunctions.captureSentryException(error);
             return { status: 500, json: { success: false, error: "Internal server error, please contact support" } };
         }

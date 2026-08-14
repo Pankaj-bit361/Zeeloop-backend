@@ -13,8 +13,8 @@ class ActionFunctions {
             const actions = await Action.find({ orgId }).sort({ createdAt: -1 });
             return { status: 200, json: { success: true, data: actions } };
         } catch (error) {
-            console.log("ActionFunctions:listActions: Catch block");
-            console.log(error);
+            console.error("ActionFunctions:listActions: Catch block");
+            console.error(error);
             generalFunctions.captureSentryException(error);
             return { status: 500, json: { success: false, error: "Internal server error, please contact support" } };
         }
@@ -52,8 +52,8 @@ class ActionFunctions {
             });
             return { status: 201, json: { success: true, data: action } };
         } catch (error) {
-            console.log("ActionFunctions:createAction: Catch block");
-            console.log(error);
+            console.error("ActionFunctions:createAction: Catch block");
+            console.error(error);
             generalFunctions.captureSentryException(error);
             return { status: 500, json: { success: false, error: "Internal server error, please contact support" } };
         }
@@ -97,8 +97,8 @@ class ActionFunctions {
             }
             return { status: 200, json: { success: true, data: action } };
         } catch (error) {
-            console.log("ActionFunctions:updateAction: Catch block");
-            console.log(error);
+            console.error("ActionFunctions:updateAction: Catch block");
+            console.error(error);
             generalFunctions.captureSentryException(error);
             return { status: 500, json: { success: false, error: "Internal server error, please contact support" } };
         }
@@ -116,8 +116,8 @@ class ActionFunctions {
             }
             return { status: 200, json: { success: true } };
         } catch (error) {
-            console.log("ActionFunctions:deleteAction: Catch block");
-            console.log(error);
+            console.error("ActionFunctions:deleteAction: Catch block");
+            console.error(error);
             generalFunctions.captureSentryException(error);
             return { status: 500, json: { success: false, error: "Internal server error, please contact support" } };
         }
@@ -156,8 +156,8 @@ class ActionFunctions {
                 },
             };
         } catch (error) {
-            console.log("ActionFunctions:testAction: Catch block");
-            console.log(error);
+            console.error("ActionFunctions:testAction: Catch block");
+            console.error(error);
             generalFunctions.captureSentryException(error);
             return { status: 500, json: { success: false, error: "Internal server error, please contact support" } };
         }
@@ -202,8 +202,8 @@ class ActionFunctions {
             }
             return { success: true, data: callResult.body, executionId: execution.executionId };
         } catch (error) {
-            console.log("ActionFunctions:executeAction: Catch block");
-            console.log(error);
+            console.error("ActionFunctions:executeAction: Catch block");
+            console.error(error);
             generalFunctions.captureSentryException(error);
             return { success: false, error: "Action execution failed" };
         }

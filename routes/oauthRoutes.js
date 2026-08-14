@@ -28,8 +28,8 @@ router.get("/google", (req, res) => {
         if (state) sessionFunctions.setOAuthStateCookie(res, state);
         return res.redirect(url);
     } catch (error) {
-        console.log("OAuth router /google catch block");
-        console.log(error);
+        console.error("OAuth router /google catch block");
+        console.error(error);
         generalFunctions.captureSentryException(error);
         return bounceToLogin(res, "google");
     }
@@ -46,8 +46,8 @@ router.get("/google/callback", async (req, res) => {
         if (result.accountId) sessionFunctions.setSessionCookie(res, result.accountId);
         return res.redirect(result.redirectUrl);
     } catch (error) {
-        console.log("OAuth router /google/callback catch block");
-        console.log(error);
+        console.error("OAuth router /google/callback catch block");
+        console.error(error);
         generalFunctions.captureSentryException(error);
         return bounceToLogin(res, "google");
     }
@@ -59,8 +59,8 @@ router.get("/github", (req, res) => {
         if (state) sessionFunctions.setOAuthStateCookie(res, state);
         return res.redirect(url);
     } catch (error) {
-        console.log("OAuth router /github catch block");
-        console.log(error);
+        console.error("OAuth router /github catch block");
+        console.error(error);
         generalFunctions.captureSentryException(error);
         return bounceToLogin(res, "github");
     }
@@ -77,8 +77,8 @@ router.get("/github/callback", async (req, res) => {
         if (result.accountId) sessionFunctions.setSessionCookie(res, result.accountId);
         return res.redirect(result.redirectUrl);
     } catch (error) {
-        console.log("OAuth router /github/callback catch block");
-        console.log(error);
+        console.error("OAuth router /github/callback catch block");
+        console.error(error);
         generalFunctions.captureSentryException(error);
         return bounceToLogin(res, "github");
     }

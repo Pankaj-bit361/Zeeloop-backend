@@ -112,8 +112,8 @@ class AnalyticsFunctions {
                 },
             };
         } catch (error) {
-            console.log("AnalyticsFunctions:getOverview: Catch block");
-            console.log(error);
+            console.error("AnalyticsFunctions:getOverview: Catch block");
+            console.error(error);
             generalFunctions.captureSentryException(error);
             return { status: 500, json: { success: false, error: "Internal server error, please contact support" } };
         }
@@ -155,8 +155,8 @@ class AnalyticsFunctions {
 
             return { status: 200, json: { success: true, data: gaps, windowDays } };
         } catch (error) {
-            console.log("AnalyticsFunctions:getContentGaps: Catch block");
-            console.log(error);
+            console.error("AnalyticsFunctions:getContentGaps: Catch block");
+            console.error(error);
             generalFunctions.captureSentryException(error);
             return { status: 500, json: { success: false, error: "Internal server error, please contact support" } };
         }
@@ -217,8 +217,8 @@ class AnalyticsFunctions {
             console.log("AnalyticsFunctions:computeResolutions: resolved:", resolvedCount);
             return { success: true, resolvedCount };
         } catch (error) {
-            console.log("AnalyticsFunctions:computeResolutions: Catch block");
-            console.log(error);
+            console.error("AnalyticsFunctions:computeResolutions: Catch block");
+            console.error(error);
             generalFunctions.captureSentryException(error);
             return { success: false };
         }

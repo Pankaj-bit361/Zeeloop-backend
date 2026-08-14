@@ -103,8 +103,8 @@ class ChatFunctions {
                 },
             };
         } catch (error) {
-            console.log("ChatFunctions:bootstrap: Catch block");
-            console.log(error);
+            console.error("ChatFunctions:bootstrap: Catch block");
+            console.error(error);
             generalFunctions.captureSentryException(error);
             return { status: 500, json: { success: false, error: "Internal server error, please contact support" } };
         }
@@ -204,8 +204,8 @@ class ChatFunctions {
                 },
             };
         } catch (error) {
-            console.log("ChatFunctions:sendMessage: Catch block");
-            console.log(error);
+            console.error("ChatFunctions:sendMessage: Catch block");
+            console.error(error);
             generalFunctions.captureSentryException(error);
             return { status: 500, json: { success: false, error: "Internal server error, please contact support" } };
         }
@@ -294,8 +294,8 @@ class ChatFunctions {
 
             return { status: 200, json: { success: true, data: { message } } };
         } catch (error) {
-            console.log("ChatFunctions:confirmAction: Catch block");
-            console.log(error);
+            console.error("ChatFunctions:confirmAction: Catch block");
+            console.error(error);
             generalFunctions.captureSentryException(error);
             return { status: 500, json: { success: false, error: "Internal server error, please contact support" } };
         }
@@ -325,8 +325,8 @@ class ChatFunctions {
             }
             return { status: 200, json: { success: true } };
         } catch (error) {
-            console.log("ChatFunctions:feedback: Catch block");
-            console.log(error);
+            console.error("ChatFunctions:feedback: Catch block");
+            console.error(error);
             generalFunctions.captureSentryException(error);
             return { status: 500, json: { success: false, error: "Internal server error, please contact support" } };
         }
@@ -363,8 +363,8 @@ class ChatFunctions {
             }));
             return { status: 200, json: { success: true, data } };
         } catch (error) {
-            console.log("ChatFunctions:listWidgetConversations: Catch block");
-            console.log(error);
+            console.error("ChatFunctions:listWidgetConversations: Catch block");
+            console.error(error);
             generalFunctions.captureSentryException(error);
             return { status: 500, json: { success: false, error: "Internal server error, please contact support" } };
         }
@@ -475,8 +475,8 @@ class ChatFunctions {
                 .filter((collection) => collection.articleCount > 0);
             return { status: 200, json: { success: true, data: { collections } } };
         } catch (error) {
-            console.log("ChatFunctions:help: Catch block");
-            console.log(error);
+            console.error("ChatFunctions:help: Catch block");
+            console.error(error);
             generalFunctions.captureSentryException(error);
             return { status: 500, json: { success: false, error: "Internal server error, please contact support" } };
         }
@@ -554,8 +554,8 @@ class ChatFunctions {
 
             return { status: 200, json: { success: true, data, total, statusCounts, page: pageNum, limit: pageSize } };
         } catch (error) {
-            console.log("ChatFunctions:listConversations: Catch block");
-            console.log(error);
+            console.error("ChatFunctions:listConversations: Catch block");
+            console.error(error);
             generalFunctions.captureSentryException(error);
             return { status: 500, json: { success: false, error: "Internal server error, please contact support" } };
         }
@@ -589,8 +589,8 @@ class ChatFunctions {
 
             return { status: 200, json: { success: true, data: { conversation, messages, traces: traceData, endUser } } };
         } catch (error) {
-            console.log("ChatFunctions:getConversation: Catch block");
-            console.log(error);
+            console.error("ChatFunctions:getConversation: Catch block");
+            console.error(error);
             generalFunctions.captureSentryException(error);
             return { status: 500, json: { success: false, error: "Internal server error, please contact support" } };
         }
@@ -626,8 +626,8 @@ class ChatFunctions {
 
             return { status: 200, json: { success: true, data: { message } } };
         } catch (error) {
-            console.log("ChatFunctions:replyAsHuman: Catch block");
-            console.log(error);
+            console.error("ChatFunctions:replyAsHuman: Catch block");
+            console.error(error);
             generalFunctions.captureSentryException(error);
             return { status: 500, json: { success: false, error: "Internal server error, please contact support" } };
         }
@@ -667,8 +667,8 @@ class ChatFunctions {
 
             return { status: 200, json: { success: true, data: conversation } };
         } catch (error) {
-            console.log("ChatFunctions:updateConversationStatus: Catch block");
-            console.log(error);
+            console.error("ChatFunctions:updateConversationStatus: Catch block");
+            console.error(error);
             generalFunctions.captureSentryException(error);
             return { status: 500, json: { success: false, error: "Internal server error, please contact support" } };
         }

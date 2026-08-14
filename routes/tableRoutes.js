@@ -10,8 +10,8 @@ router.get("/:orgId/tables", reqOrgOwnerAuth, async (req, res) => {
         const { status, json } = await tableFunctions.listTables({ orgId: req.params.orgId });
         return res.status(status).json(json);
     } catch (error) {
-        console.log(`Table router ${req.path} catch block`);
-        console.log(error);
+        console.error(`Table router ${req.path} catch block`);
+        console.error(error);
         generalFunctions.captureSentryException(error);
         return res.status(500).json({ success: false, error: "Internal server error, please contact support" });
     }
@@ -27,8 +27,8 @@ router.post("/:orgId/tables", reqOrgOwnerAuth, async (req, res) => {
         });
         return res.status(status).json(json);
     } catch (error) {
-        console.log(`Table router ${req.path} catch block`);
-        console.log(error);
+        console.error(`Table router ${req.path} catch block`);
+        console.error(error);
         generalFunctions.captureSentryException(error);
         return res.status(500).json({ success: false, error: "Internal server error, please contact support" });
     }
@@ -42,8 +42,8 @@ router.get("/:orgId/tables/:tableId", reqOrgOwnerAuth, async (req, res) => {
         });
         return res.status(status).json(json);
     } catch (error) {
-        console.log(`Table router ${req.path} catch block`);
-        console.log(error);
+        console.error(`Table router ${req.path} catch block`);
+        console.error(error);
         generalFunctions.captureSentryException(error);
         return res.status(500).json({ success: false, error: "Internal server error, please contact support" });
     }
@@ -59,8 +59,8 @@ router.patch("/:orgId/tables/:tableId", reqOrgOwnerAuth, async (req, res) => {
         });
         return res.status(status).json(json);
     } catch (error) {
-        console.log(`Table router ${req.path} catch block`);
-        console.log(error);
+        console.error(`Table router ${req.path} catch block`);
+        console.error(error);
         generalFunctions.captureSentryException(error);
         return res.status(500).json({ success: false, error: "Internal server error, please contact support" });
     }
@@ -74,8 +74,8 @@ router.delete("/:orgId/tables/:tableId", reqOrgOwnerAuth, async (req, res) => {
         });
         return res.status(status).json(json);
     } catch (error) {
-        console.log(`Table router ${req.path} catch block`);
-        console.log(error);
+        console.error(`Table router ${req.path} catch block`);
+        console.error(error);
         generalFunctions.captureSentryException(error);
         return res.status(500).json({ success: false, error: "Internal server error, please contact support" });
     }
@@ -92,8 +92,8 @@ router.get("/:orgId/tables/:tableId/rows", reqOrgOwnerAuth, async (req, res) => 
         });
         return res.status(status).json(json);
     } catch (error) {
-        console.log(`Table router ${req.path} catch block`);
-        console.log(error);
+        console.error(`Table router ${req.path} catch block`);
+        console.error(error);
         generalFunctions.captureSentryException(error);
         return res.status(500).json({ success: false, error: "Internal server error, please contact support" });
     }
@@ -108,8 +108,8 @@ router.post("/:orgId/tables/:tableId/rows", reqOrgOwnerAuth, async (req, res) =>
         });
         return res.status(status).json(json);
     } catch (error) {
-        console.log(`Table router ${req.path} catch block`);
-        console.log(error);
+        console.error(`Table router ${req.path} catch block`);
+        console.error(error);
         generalFunctions.captureSentryException(error);
         return res.status(500).json({ success: false, error: "Internal server error, please contact support" });
     }
@@ -125,8 +125,8 @@ router.patch("/:orgId/tables/:tableId/rows/:rowId", reqOrgOwnerAuth, async (req,
         });
         return res.status(status).json(json);
     } catch (error) {
-        console.log(`Table router ${req.path} catch block`);
-        console.log(error);
+        console.error(`Table router ${req.path} catch block`);
+        console.error(error);
         generalFunctions.captureSentryException(error);
         return res.status(500).json({ success: false, error: "Internal server error, please contact support" });
     }
@@ -141,8 +141,8 @@ router.delete("/:orgId/tables/:tableId/rows/:rowId", reqOrgOwnerAuth, async (req
         });
         return res.status(status).json(json);
     } catch (error) {
-        console.log(`Table router ${req.path} catch block`);
-        console.log(error);
+        console.error(`Table router ${req.path} catch block`);
+        console.error(error);
         generalFunctions.captureSentryException(error);
         return res.status(500).json({ success: false, error: "Internal server error, please contact support" });
     }
@@ -157,8 +157,8 @@ router.post("/:orgId/tables/:tableId/import", reqOrgOwnerAuth, async (req, res) 
         });
         return res.status(status).json(json);
     } catch (error) {
-        console.log(`Table router ${req.path} catch block`);
-        console.log(error);
+        console.error(`Table router ${req.path} catch block`);
+        console.error(error);
         generalFunctions.captureSentryException(error);
         return res.status(500).json({ success: false, error: "Internal server error, please contact support" });
     }

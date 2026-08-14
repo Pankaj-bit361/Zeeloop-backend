@@ -13,8 +13,8 @@ const { reqSessionAuth } = require("../middlewares/auth");
 const router = express.Router();
 
 function fail(req, res, error) {
-    console.log(`Auth router ${req.path} catch block`);
-    console.log(error);
+    console.error(`Auth router ${req.path} catch block`);
+    console.error(error);
     generalFunctions.captureSentryException(error);
     return res.status(500).json({ success: false, error: "Internal server error, please contact support" });
 }

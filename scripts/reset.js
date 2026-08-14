@@ -112,7 +112,7 @@ async function reset() {
 
 reset().catch(async (error) => {
     console.log("reset: failed");
-    console.log(error);
+    console.error(error);
     await mongoose.disconnect();
     process.exit(1);
 });

@@ -15,8 +15,8 @@ class KnowledgeFunctions {
             const sources = await KnowledgeSource.find({ orgId }).sort({ createdAt: -1 });
             return { status: 200, json: { success: true, data: sources } };
         } catch (error) {
-            console.log("KnowledgeFunctions:listSources: Catch block");
-            console.log(error);
+            console.error("KnowledgeFunctions:listSources: Catch block");
+            console.error(error);
             generalFunctions.captureSentryException(error);
             return { status: 500, json: { success: false, error: "Internal server error, please contact support" } };
         }
@@ -60,8 +60,8 @@ class KnowledgeFunctions {
             const fresh = await KnowledgeSource.findOne({ orgId, sourceId: source.sourceId });
             return { status: 201, json: { success: true, data: fresh } };
         } catch (error) {
-            console.log("KnowledgeFunctions:createSource: Catch block");
-            console.log(error);
+            console.error("KnowledgeFunctions:createSource: Catch block");
+            console.error(error);
             generalFunctions.captureSentryException(error);
             return { status: 500, json: { success: false, error: "Internal server error, please contact support" } };
         }
@@ -80,8 +80,8 @@ class KnowledgeFunctions {
             await Chunk.deleteMany({ orgId, sourceId });
             return { status: 200, json: { success: true } };
         } catch (error) {
-            console.log("KnowledgeFunctions:deleteSource: Catch block");
-            console.log(error);
+            console.error("KnowledgeFunctions:deleteSource: Catch block");
+            console.error(error);
             generalFunctions.captureSentryException(error);
             return { status: 500, json: { success: false, error: "Internal server error, please contact support" } };
         }
@@ -106,8 +106,8 @@ class KnowledgeFunctions {
             const fresh = await KnowledgeSource.findOne({ orgId, sourceId });
             return { status: 200, json: { success: true, data: fresh } };
         } catch (error) {
-            console.log("KnowledgeFunctions:resyncSource: Catch block");
-            console.log(error);
+            console.error("KnowledgeFunctions:resyncSource: Catch block");
+            console.error(error);
             generalFunctions.captureSentryException(error);
             return { status: 500, json: { success: false, error: "Internal server error, please contact support" } };
         }
@@ -132,8 +132,8 @@ class KnowledgeFunctions {
             ]);
             return { status: 200, json: { success: true, data: chunks, total, page: pageNum, limit: pageSize } };
         } catch (error) {
-            console.log("KnowledgeFunctions:listChunks: Catch block");
-            console.log(error);
+            console.error("KnowledgeFunctions:listChunks: Catch block");
+            console.error(error);
             generalFunctions.captureSentryException(error);
             return { status: 500, json: { success: false, error: "Internal server error, please contact support" } };
         }
@@ -189,8 +189,8 @@ class KnowledgeFunctions {
             );
             return { success: true };
         } catch (error) {
-            console.log("KnowledgeFunctions:_ingestSource: Catch block");
-            console.log(error);
+            console.error("KnowledgeFunctions:_ingestSource: Catch block");
+            console.error(error);
             generalFunctions.captureSentryException(error);
             await KnowledgeSource.updateOne(
                 { orgId: source.orgId, sourceId: source.sourceId },

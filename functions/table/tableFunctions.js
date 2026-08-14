@@ -16,8 +16,8 @@ class TableFunctions {
             const tables = await Table.find({ orgId }).sort({ createdAt: -1 });
             return { status: 200, json: { success: true, data: tables, total: tables.length } };
         } catch (error) {
-            console.log("TableFunctions:listTables: Catch block");
-            console.log(error);
+            console.error("TableFunctions:listTables: Catch block");
+            console.error(error);
             generalFunctions.captureSentryException(error);
             return { status: 500, json: { success: false, error: "Internal server error, please contact support" } };
         }
@@ -45,8 +45,8 @@ class TableFunctions {
             });
             return { status: 201, json: { success: true, data: table } };
         } catch (error) {
-            console.log("TableFunctions:createTable: Catch block");
-            console.log(error);
+            console.error("TableFunctions:createTable: Catch block");
+            console.error(error);
             generalFunctions.captureSentryException(error);
             return { status: 500, json: { success: false, error: "Internal server error, please contact support" } };
         }
@@ -65,8 +65,8 @@ class TableFunctions {
             }
             return { status: 200, json: { success: true, data: table } };
         } catch (error) {
-            console.log("TableFunctions:getTable: Catch block");
-            console.log(error);
+            console.error("TableFunctions:getTable: Catch block");
+            console.error(error);
             generalFunctions.captureSentryException(error);
             return { status: 500, json: { success: false, error: "Internal server error, please contact support" } };
         }
@@ -96,8 +96,8 @@ class TableFunctions {
             }
             return { status: 200, json: { success: true, data: table } };
         } catch (error) {
-            console.log("TableFunctions:updateTable: Catch block");
-            console.log(error);
+            console.error("TableFunctions:updateTable: Catch block");
+            console.error(error);
             generalFunctions.captureSentryException(error);
             return { status: 500, json: { success: false, error: "Internal server error, please contact support" } };
         }
@@ -119,8 +119,8 @@ class TableFunctions {
             console.log("TableFunctions:deleteTable: removed rows:", removed.deletedCount);
             return { status: 200, json: { success: true, data: { tableId, removedRows: removed.deletedCount } } };
         } catch (error) {
-            console.log("TableFunctions:deleteTable: Catch block");
-            console.log(error);
+            console.error("TableFunctions:deleteTable: Catch block");
+            console.error(error);
             generalFunctions.captureSentryException(error);
             return { status: 500, json: { success: false, error: "Internal server error, please contact support" } };
         }
@@ -162,8 +162,8 @@ class TableFunctions {
                 json: { success: true, data: rows, total, table, page: pageNum, limit: pageSize },
             };
         } catch (error) {
-            console.log("TableFunctions:listRows: Catch block");
-            console.log(error);
+            console.error("TableFunctions:listRows: Catch block");
+            console.error(error);
             generalFunctions.captureSentryException(error);
             return { status: 500, json: { success: false, error: "Internal server error, please contact support" } };
         }
@@ -210,8 +210,8 @@ class TableFunctions {
             await this._syncRowCount({ orgId, tableId });
             return { status: 201, json: { success: true, data: row } };
         } catch (error) {
-            console.log("TableFunctions:createRow: Catch block");
-            console.log(error);
+            console.error("TableFunctions:createRow: Catch block");
+            console.error(error);
             generalFunctions.captureSentryException(error);
             return { status: 500, json: { success: false, error: "Internal server error, please contact support" } };
         }
@@ -265,8 +265,8 @@ class TableFunctions {
             );
             return { status: 200, json: { success: true, data: row } };
         } catch (error) {
-            console.log("TableFunctions:updateRow: Catch block");
-            console.log(error);
+            console.error("TableFunctions:updateRow: Catch block");
+            console.error(error);
             generalFunctions.captureSentryException(error);
             return { status: 500, json: { success: false, error: "Internal server error, please contact support" } };
         }
@@ -289,8 +289,8 @@ class TableFunctions {
             await this._syncRowCount({ orgId, tableId });
             return { status: 200, json: { success: true, data: { rowId } } };
         } catch (error) {
-            console.log("TableFunctions:deleteRow: Catch block");
-            console.log(error);
+            console.error("TableFunctions:deleteRow: Catch block");
+            console.error(error);
             generalFunctions.captureSentryException(error);
             return { status: 500, json: { success: false, error: "Internal server error, please contact support" } };
         }
@@ -386,8 +386,8 @@ class TableFunctions {
                 },
             };
         } catch (error) {
-            console.log("TableFunctions:importRows: Catch block");
-            console.log(error);
+            console.error("TableFunctions:importRows: Catch block");
+            console.error(error);
             generalFunctions.captureSentryException(error);
             return { status: 500, json: { success: false, error: "Internal server error, please contact support" } };
         }
