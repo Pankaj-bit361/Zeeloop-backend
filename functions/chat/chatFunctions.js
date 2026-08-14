@@ -105,7 +105,7 @@ class ChatFunctions {
         } catch (error) {
             console.error("ChatFunctions:bootstrap: Catch block");
             console.error(error);
-            generalFunctions.captureSentryException(error);
+            generalFunctions.captureException(error);
             return { status: 500, json: { success: false, error: "Internal server error, please contact support" } };
         }
     }
@@ -206,7 +206,7 @@ class ChatFunctions {
         } catch (error) {
             console.error("ChatFunctions:sendMessage: Catch block");
             console.error(error);
-            generalFunctions.captureSentryException(error);
+            generalFunctions.captureException(error);
             return { status: 500, json: { success: false, error: "Internal server error, please contact support" } };
         }
     }
@@ -296,7 +296,7 @@ class ChatFunctions {
         } catch (error) {
             console.error("ChatFunctions:confirmAction: Catch block");
             console.error(error);
-            generalFunctions.captureSentryException(error);
+            generalFunctions.captureException(error);
             return { status: 500, json: { success: false, error: "Internal server error, please contact support" } };
         }
     }
@@ -327,7 +327,7 @@ class ChatFunctions {
         } catch (error) {
             console.error("ChatFunctions:feedback: Catch block");
             console.error(error);
-            generalFunctions.captureSentryException(error);
+            generalFunctions.captureException(error);
             return { status: 500, json: { success: false, error: "Internal server error, please contact support" } };
         }
     }
@@ -365,7 +365,7 @@ class ChatFunctions {
         } catch (error) {
             console.error("ChatFunctions:listWidgetConversations: Catch block");
             console.error(error);
-            generalFunctions.captureSentryException(error);
+            generalFunctions.captureException(error);
             return { status: 500, json: { success: false, error: "Internal server error, please contact support" } };
         }
     }
@@ -477,7 +477,7 @@ class ChatFunctions {
         } catch (error) {
             console.error("ChatFunctions:help: Catch block");
             console.error(error);
-            generalFunctions.captureSentryException(error);
+            generalFunctions.captureException(error);
             return { status: 500, json: { success: false, error: "Internal server error, please contact support" } };
         }
     }
@@ -556,7 +556,7 @@ class ChatFunctions {
         } catch (error) {
             console.error("ChatFunctions:listConversations: Catch block");
             console.error(error);
-            generalFunctions.captureSentryException(error);
+            generalFunctions.captureException(error);
             return { status: 500, json: { success: false, error: "Internal server error, please contact support" } };
         }
     }
@@ -591,7 +591,7 @@ class ChatFunctions {
         } catch (error) {
             console.error("ChatFunctions:getConversation: Catch block");
             console.error(error);
-            generalFunctions.captureSentryException(error);
+            generalFunctions.captureException(error);
             return { status: 500, json: { success: false, error: "Internal server error, please contact support" } };
         }
     }
@@ -628,7 +628,7 @@ class ChatFunctions {
         } catch (error) {
             console.error("ChatFunctions:replyAsHuman: Catch block");
             console.error(error);
-            generalFunctions.captureSentryException(error);
+            generalFunctions.captureException(error);
             return { status: 500, json: { success: false, error: "Internal server error, please contact support" } };
         }
     }
@@ -669,7 +669,7 @@ class ChatFunctions {
         } catch (error) {
             console.error("ChatFunctions:updateConversationStatus: Catch block");
             console.error(error);
-            generalFunctions.captureSentryException(error);
+            generalFunctions.captureException(error);
             return { status: 500, json: { success: false, error: "Internal server error, please contact support" } };
         }
     }

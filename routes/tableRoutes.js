@@ -12,7 +12,7 @@ router.get("/:orgId/tables", reqOrgOwnerAuth, async (req, res) => {
     } catch (error) {
         console.error(`Table router ${req.path} catch block`);
         console.error(error);
-        generalFunctions.captureSentryException(error);
+        generalFunctions.captureException(error);
         return res.status(500).json({ success: false, error: "Internal server error, please contact support" });
     }
 });
@@ -29,7 +29,7 @@ router.post("/:orgId/tables", reqOrgOwnerAuth, async (req, res) => {
     } catch (error) {
         console.error(`Table router ${req.path} catch block`);
         console.error(error);
-        generalFunctions.captureSentryException(error);
+        generalFunctions.captureException(error);
         return res.status(500).json({ success: false, error: "Internal server error, please contact support" });
     }
 });
@@ -44,7 +44,7 @@ router.get("/:orgId/tables/:tableId", reqOrgOwnerAuth, async (req, res) => {
     } catch (error) {
         console.error(`Table router ${req.path} catch block`);
         console.error(error);
-        generalFunctions.captureSentryException(error);
+        generalFunctions.captureException(error);
         return res.status(500).json({ success: false, error: "Internal server error, please contact support" });
     }
 });
@@ -61,7 +61,7 @@ router.patch("/:orgId/tables/:tableId", reqOrgOwnerAuth, async (req, res) => {
     } catch (error) {
         console.error(`Table router ${req.path} catch block`);
         console.error(error);
-        generalFunctions.captureSentryException(error);
+        generalFunctions.captureException(error);
         return res.status(500).json({ success: false, error: "Internal server error, please contact support" });
     }
 });
@@ -76,7 +76,7 @@ router.delete("/:orgId/tables/:tableId", reqOrgOwnerAuth, async (req, res) => {
     } catch (error) {
         console.error(`Table router ${req.path} catch block`);
         console.error(error);
-        generalFunctions.captureSentryException(error);
+        generalFunctions.captureException(error);
         return res.status(500).json({ success: false, error: "Internal server error, please contact support" });
     }
 });
@@ -94,7 +94,7 @@ router.get("/:orgId/tables/:tableId/rows", reqOrgOwnerAuth, async (req, res) => 
     } catch (error) {
         console.error(`Table router ${req.path} catch block`);
         console.error(error);
-        generalFunctions.captureSentryException(error);
+        generalFunctions.captureException(error);
         return res.status(500).json({ success: false, error: "Internal server error, please contact support" });
     }
 });
@@ -110,7 +110,7 @@ router.post("/:orgId/tables/:tableId/rows", reqOrgOwnerAuth, async (req, res) =>
     } catch (error) {
         console.error(`Table router ${req.path} catch block`);
         console.error(error);
-        generalFunctions.captureSentryException(error);
+        generalFunctions.captureException(error);
         return res.status(500).json({ success: false, error: "Internal server error, please contact support" });
     }
 });
@@ -127,7 +127,7 @@ router.patch("/:orgId/tables/:tableId/rows/:rowId", reqOrgOwnerAuth, async (req,
     } catch (error) {
         console.error(`Table router ${req.path} catch block`);
         console.error(error);
-        generalFunctions.captureSentryException(error);
+        generalFunctions.captureException(error);
         return res.status(500).json({ success: false, error: "Internal server error, please contact support" });
     }
 });
@@ -143,7 +143,7 @@ router.delete("/:orgId/tables/:tableId/rows/:rowId", reqOrgOwnerAuth, async (req
     } catch (error) {
         console.error(`Table router ${req.path} catch block`);
         console.error(error);
-        generalFunctions.captureSentryException(error);
+        generalFunctions.captureException(error);
         return res.status(500).json({ success: false, error: "Internal server error, please contact support" });
     }
 });
@@ -159,7 +159,7 @@ router.post("/:orgId/tables/:tableId/import", reqOrgOwnerAuth, async (req, res) 
     } catch (error) {
         console.error(`Table router ${req.path} catch block`);
         console.error(error);
-        generalFunctions.captureSentryException(error);
+        generalFunctions.captureException(error);
         return res.status(500).json({ success: false, error: "Internal server error, please contact support" });
     }
 });

@@ -65,9 +65,11 @@ exports.config = {
         ],
     },
 
-    // Widget traffic runs on customer sites and is high-volume; /health is
-    // pinged by the load balancer. Neither is worth a transaction trace.
+    // Widget traffic runs on customer sites and is high-volume; / and /health
+    // are pinged by the load balancer every 5s — roughly 17k requests a day
+    // that would otherwise dominate both the throughput chart and the 100 GB
+    // ingest allowance while saying nothing.
     rules: {
-        ignore: ["^/health$", "^/widget.js$", "^/widget/frame"],
+        ignore: ["^/$", "^/health$", "^/widget.js$", "^/widget/frame"],
     },
 };

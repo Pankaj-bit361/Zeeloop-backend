@@ -53,7 +53,7 @@ class AuthFunctions {
         } catch (error) {
             console.error("AuthFunctions:getConfig: Catch block");
             console.error(error);
-            generalFunctions.captureSentryException(error);
+            generalFunctions.captureException(error);
             return { status: 500, json: { success: false, error: GENERIC_ERROR } };
         }
     }
@@ -109,7 +109,7 @@ class AuthFunctions {
         } catch (error) {
             console.error("AuthFunctions:signup: Catch block");
             console.error(error);
-            generalFunctions.captureSentryException(error);
+            generalFunctions.captureException(error);
             return { status: 500, json: { success: false, error: GENERIC_ERROR } };
         }
     }
@@ -135,7 +135,7 @@ class AuthFunctions {
         } catch (error) {
             console.error("AuthFunctions:login: Catch block");
             console.error(error);
-            generalFunctions.captureSentryException(error);
+            generalFunctions.captureException(error);
             return { status: 500, json: { success: false, error: GENERIC_ERROR } };
         }
     }
@@ -166,7 +166,7 @@ class AuthFunctions {
         } catch (error) {
             console.error("AuthFunctions:me: Catch block");
             console.error(error);
-            generalFunctions.captureSentryException(error);
+            generalFunctions.captureException(error);
             return { status: 500, json: { success: false, error: GENERIC_ERROR } };
         }
     }
@@ -192,7 +192,7 @@ class AuthFunctions {
         } catch (error) {
             console.error("AuthFunctions:updateMe: Catch block");
             console.error(error);
-            generalFunctions.captureSentryException(error);
+            generalFunctions.captureException(error);
             return { status: 500, json: { success: false, error: GENERIC_ERROR } };
         }
     }
@@ -251,7 +251,7 @@ class AuthFunctions {
         } catch (error) {
             console.error("AuthFunctions:mintOrgToken: Catch block");
             console.error(error);
-            generalFunctions.captureSentryException(error);
+            generalFunctions.captureException(error);
             return { status: 500, json: { success: false, error: GENERIC_ERROR } };
         }
     }
@@ -303,7 +303,7 @@ class AuthFunctions {
         } catch (error) {
             console.error("AuthFunctions:createOrg: Catch block");
             console.error(error);
-            generalFunctions.captureSentryException(error);
+            generalFunctions.captureException(error);
             return { status: 500, json: { success: false, error: GENERIC_ERROR } };
         }
     }
@@ -361,7 +361,7 @@ class AuthFunctions {
         } catch (error) {
             console.error("AuthFunctions:forgotPassword: Catch block");
             console.error(error);
-            generalFunctions.captureSentryException(error);
+            generalFunctions.captureException(error);
             return { status: 500, json: { success: false, error: GENERIC_ERROR } };
         }
     }
@@ -401,7 +401,7 @@ class AuthFunctions {
         } catch (error) {
             console.error("AuthFunctions:resetPassword: Catch block");
             console.error(error);
-            generalFunctions.captureSentryException(error);
+            generalFunctions.captureException(error);
             return { status: 500, json: { success: false, error: GENERIC_ERROR } };
         }
     }
@@ -483,7 +483,7 @@ class AuthFunctions {
         } catch (error) {
             console.error("AuthFunctions:googleCallback: Catch block");
             console.error(error);
-            generalFunctions.captureSentryException(error);
+            generalFunctions.captureException(error);
             return fail("google");
         }
     }
@@ -567,7 +567,7 @@ class AuthFunctions {
         } catch (error) {
             console.error("AuthFunctions:githubCallback: Catch block");
             console.error(error);
-            generalFunctions.captureSentryException(error);
+            generalFunctions.captureException(error);
             return fail("github");
         }
     }
@@ -599,7 +599,7 @@ class AuthFunctions {
         } catch (error) {
             console.error("AuthFunctions:devLogin: Catch block");
             console.error(error);
-            generalFunctions.captureSentryException(error);
+            generalFunctions.captureException(error);
             return { status: 500, json: { success: false, error: GENERIC_ERROR } };
         }
     }
@@ -683,7 +683,7 @@ class AuthFunctions {
         } catch (error) {
             console.error("AuthFunctions:_orgsForAccount: Catch block");
             console.error(error);
-            generalFunctions.captureSentryException(error);
+            generalFunctions.captureException(error);
             return { success: false };
         }
     }

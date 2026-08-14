@@ -114,7 +114,7 @@ class AnalyticsFunctions {
         } catch (error) {
             console.error("AnalyticsFunctions:getOverview: Catch block");
             console.error(error);
-            generalFunctions.captureSentryException(error);
+            generalFunctions.captureException(error);
             return { status: 500, json: { success: false, error: "Internal server error, please contact support" } };
         }
     }
@@ -157,7 +157,7 @@ class AnalyticsFunctions {
         } catch (error) {
             console.error("AnalyticsFunctions:getContentGaps: Catch block");
             console.error(error);
-            generalFunctions.captureSentryException(error);
+            generalFunctions.captureException(error);
             return { status: 500, json: { success: false, error: "Internal server error, please contact support" } };
         }
     }
@@ -219,7 +219,7 @@ class AnalyticsFunctions {
         } catch (error) {
             console.error("AnalyticsFunctions:computeResolutions: Catch block");
             console.error(error);
-            generalFunctions.captureSentryException(error);
+            generalFunctions.captureException(error);
             return { success: false };
         }
     }

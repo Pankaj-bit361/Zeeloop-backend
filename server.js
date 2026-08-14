@@ -44,6 +44,14 @@ const widgetCors = cors({ origin: "*" });
 // become "*" — browsers reject that pairing outright.
 const dashboardCors = cors({ origin: config.CORS_DASHBOARD_ORIGINS, credentials: true });
 
+// The Elastic Beanstalk load balancer health-checks / by default. Answering it
+// here rather than repointing the check at /health keeps the fix in the repo,
+// where an environment rebuild cannot silently undo it. Both paths are
+// liveness-only on purpose: they report that the process is up and accepting
+// connections, and deliberately do not touch Mongo — a database blip should
+// take conversations down, not have the balancer pull every instance out of
+// service and leave nothing serving at all.
+app.get("/", (req, res) => res.status(200).json({ success: true, status: "ok" }));
 app.get("/health", (req, res) => res.status(200).json({ success: true, status: "ok" }));
 
 // OAuth round-trip. Root-mounted and CORS-free: the provider redirect URIs are
@@ -100,7 +108,7 @@ app.use((req, res) => {
 app.use((error, req, res, next) => {
     console.error("Server: global error handler");
     console.error(error);
-    generalFunctions.captureSentryException(error);
+    generalFunctions.captureException(error);
     // requestContext stamps requestId onto any 5xx body on the way out.
     return res.status(500).json({ success: false, error: "Internal server error, please contact support" });
 });

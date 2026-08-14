@@ -53,7 +53,7 @@ class AgentFunctions {
         } catch (error) {
             console.error("AgentFunctions:runTurn: Catch block");
             console.error(error);
-            generalFunctions.captureSentryException(error);
+            generalFunctions.captureException(error);
             trace.outcome = TurnOutcome.ERROR;
             result = {
                 success: false,
@@ -244,7 +244,7 @@ class AgentFunctions {
             // Fail open with safe defaults — a classifier outage must not take the product down.
             console.log("AgentFunctions:_runGate: failed open");
             console.error(error);
-            generalFunctions.captureSentryException(error);
+            generalFunctions.captureException(error);
             trace.gateFailedOpen = true;
             return { language: "en", intent: GateIntent.QUESTION, sentiment: GateSentiment.NEUTRAL, safe: true };
         }
@@ -263,7 +263,7 @@ class AgentFunctions {
         } catch (error) {
             console.log("AgentFunctions:_runChitchat: fallback greeting");
             console.error(error);
-            generalFunctions.captureSentryException(error);
+            generalFunctions.captureException(error);
             return `Hi! I'm ${org.agent.name}. How can I help you today?`;
         }
     }
@@ -295,7 +295,7 @@ class AgentFunctions {
             // Rewrite fails → use the raw message.
             console.log("AgentFunctions:_runRewrite: failed, using raw message");
             console.error(error);
-            generalFunctions.captureSentryException(error);
+            generalFunctions.captureException(error);
             return rawMessage;
         }
     }
@@ -310,7 +310,7 @@ class AgentFunctions {
         } catch (error) {
             console.log("AgentFunctions:_hybridSearch: embed failed, text-only search");
             console.error(error);
-            generalFunctions.captureSentryException(error);
+            generalFunctions.captureException(error);
         }
 
         const [vectorHits, textHits] = await Promise.all([
@@ -510,7 +510,7 @@ class AgentFunctions {
             // Validation still runs downstream.
             console.log("AgentFunctions:_runRerank: failed, degrading to fusion order");
             console.error(error);
-            generalFunctions.captureSentryException(error);
+            generalFunctions.captureException(error);
             return { topChunks: candidates.slice(0, config.RERANK_TOP_N), belowThreshold: false };
         }
     }
@@ -661,7 +661,7 @@ class AgentFunctions {
             // Fail closed — a validator outage must never become an unvalidated answer.
             console.log("AgentFunctions:_runValidate: failed closed");
             console.error(error);
-            generalFunctions.captureSentryException(error);
+            generalFunctions.captureException(error);
             return { grounded: false, answersQuery: false, unsupportedClaims: [] };
         }
     }
@@ -750,7 +750,7 @@ class AgentFunctions {
         } catch (error) {
             console.error("AgentFunctions:_writeTrace: Catch block");
             console.error(error);
-            generalFunctions.captureSentryException(error);
+            generalFunctions.captureException(error);
         }
     }
 }

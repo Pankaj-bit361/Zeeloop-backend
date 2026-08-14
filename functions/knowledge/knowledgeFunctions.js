@@ -17,7 +17,7 @@ class KnowledgeFunctions {
         } catch (error) {
             console.error("KnowledgeFunctions:listSources: Catch block");
             console.error(error);
-            generalFunctions.captureSentryException(error);
+            generalFunctions.captureException(error);
             return { status: 500, json: { success: false, error: "Internal server error, please contact support" } };
         }
     }
@@ -62,7 +62,7 @@ class KnowledgeFunctions {
         } catch (error) {
             console.error("KnowledgeFunctions:createSource: Catch block");
             console.error(error);
-            generalFunctions.captureSentryException(error);
+            generalFunctions.captureException(error);
             return { status: 500, json: { success: false, error: "Internal server error, please contact support" } };
         }
     }
@@ -82,7 +82,7 @@ class KnowledgeFunctions {
         } catch (error) {
             console.error("KnowledgeFunctions:deleteSource: Catch block");
             console.error(error);
-            generalFunctions.captureSentryException(error);
+            generalFunctions.captureException(error);
             return { status: 500, json: { success: false, error: "Internal server error, please contact support" } };
         }
     }
@@ -108,7 +108,7 @@ class KnowledgeFunctions {
         } catch (error) {
             console.error("KnowledgeFunctions:resyncSource: Catch block");
             console.error(error);
-            generalFunctions.captureSentryException(error);
+            generalFunctions.captureException(error);
             return { status: 500, json: { success: false, error: "Internal server error, please contact support" } };
         }
     }
@@ -134,7 +134,7 @@ class KnowledgeFunctions {
         } catch (error) {
             console.error("KnowledgeFunctions:listChunks: Catch block");
             console.error(error);
-            generalFunctions.captureSentryException(error);
+            generalFunctions.captureException(error);
             return { status: 500, json: { success: false, error: "Internal server error, please contact support" } };
         }
     }
@@ -191,7 +191,7 @@ class KnowledgeFunctions {
         } catch (error) {
             console.error("KnowledgeFunctions:_ingestSource: Catch block");
             console.error(error);
-            generalFunctions.captureSentryException(error);
+            generalFunctions.captureException(error);
             await KnowledgeSource.updateOne(
                 { orgId: source.orgId, sourceId: source.sourceId },
                 { status: SourceStatus.FAILED, lastError: error.message }

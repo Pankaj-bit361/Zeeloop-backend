@@ -31,7 +31,7 @@ function reqOrgOwnerAuth(req, res, next) {
     } catch (error) {
         console.error("auth:reqOrgOwnerAuth: Catch block");
         console.error(error);
-        generalFunctions.captureSentryException(error);
+        generalFunctions.captureException(error);
         return res.status(500).json({ success: false, error: "Internal server error, please contact support" });
     }
 }
@@ -59,7 +59,7 @@ async function reqSessionAuth(req, res, next) {
     } catch (error) {
         console.error("auth:reqSessionAuth: Catch block");
         console.error(error);
-        generalFunctions.captureSentryException(error);
+        generalFunctions.captureException(error);
         return res.status(500).json({ success: false, error: "Internal server error, please contact support" });
     }
 }

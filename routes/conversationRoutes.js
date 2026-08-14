@@ -18,7 +18,7 @@ router.get("/:orgId/conversations", reqOrgOwnerAuth, async (req, res) => {
     } catch (error) {
         console.error(`Conversation router ${req.path} catch block`);
         console.error(error);
-        generalFunctions.captureSentryException(error);
+        generalFunctions.captureException(error);
         return res.status(500).json({ success: false, error: "Internal server error, please contact support" });
     }
 });
@@ -33,7 +33,7 @@ router.get("/:orgId/conversations/:conversationId", reqOrgOwnerAuth, async (req,
     } catch (error) {
         console.error(`Conversation router ${req.path} catch block`);
         console.error(error);
-        generalFunctions.captureSentryException(error);
+        generalFunctions.captureException(error);
         return res.status(500).json({ success: false, error: "Internal server error, please contact support" });
     }
 });
@@ -49,7 +49,7 @@ router.patch("/:orgId/conversations/:conversationId", reqOrgOwnerAuth, async (re
     } catch (error) {
         console.error(`Conversation router ${req.path} catch block`);
         console.error(error);
-        generalFunctions.captureSentryException(error);
+        generalFunctions.captureException(error);
         return res.status(500).json({ success: false, error: "Internal server error, please contact support" });
     }
 });
@@ -65,7 +65,7 @@ router.post("/:orgId/conversations/:conversationId/reply", reqOrgOwnerAuth, asyn
     } catch (error) {
         console.error(`Conversation router ${req.path} catch block`);
         console.error(error);
-        generalFunctions.captureSentryException(error);
+        generalFunctions.captureException(error);
         return res.status(500).json({ success: false, error: "Internal server error, please contact support" });
     }
 });

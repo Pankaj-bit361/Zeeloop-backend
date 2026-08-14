@@ -15,7 +15,7 @@ router.get("/:orgId/overview", reqOrgOwnerAuth, async (req, res) => {
     } catch (error) {
         console.error(`Analytics router ${req.path} catch block`);
         console.error(error);
-        generalFunctions.captureSentryException(error);
+        generalFunctions.captureException(error);
         return res.status(500).json({ success: false, error: "Internal server error, please contact support" });
     }
 });
@@ -30,7 +30,7 @@ router.get("/:orgId/content-gaps", reqOrgOwnerAuth, async (req, res) => {
     } catch (error) {
         console.error(`Analytics router ${req.path} catch block`);
         console.error(error);
-        generalFunctions.captureSentryException(error);
+        generalFunctions.captureException(error);
         return res.status(500).json({ success: false, error: "Internal server error, please contact support" });
     }
 });

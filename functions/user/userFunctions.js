@@ -60,7 +60,7 @@ class UserFunctions {
         } catch (error) {
             console.error("UserFunctions:listUsers: Catch block");
             console.error(error);
-            generalFunctions.captureSentryException(error);
+            generalFunctions.captureException(error);
             return { status: 500, json: { success: false, error: "Internal server error, please contact support" } };
         }
     }
@@ -120,7 +120,7 @@ class UserFunctions {
         } catch (error) {
             console.error("UserFunctions:getUser: Catch block");
             console.error(error);
-            generalFunctions.captureSentryException(error);
+            generalFunctions.captureException(error);
             return { status: 500, json: { success: false, error: "Internal server error, please contact support" } };
         }
     }

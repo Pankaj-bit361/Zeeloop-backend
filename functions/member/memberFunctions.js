@@ -22,7 +22,7 @@ class MemberFunctions {
         } catch (error) {
             console.error("MemberFunctions:getMe: Catch block");
             console.error(error);
-            generalFunctions.captureSentryException(error);
+            generalFunctions.captureException(error);
             return { status: 500, json: { success: false, error: "Internal server error, please contact support" } };
         }
     }
@@ -53,7 +53,7 @@ class MemberFunctions {
         } catch (error) {
             console.error("MemberFunctions:updateMe: Catch block");
             console.error(error);
-            generalFunctions.captureSentryException(error);
+            generalFunctions.captureException(error);
             return { status: 500, json: { success: false, error: "Internal server error, please contact support" } };
         }
     }
@@ -70,7 +70,7 @@ class MemberFunctions {
         } catch (error) {
             console.error("MemberFunctions:listMembers: Catch block");
             console.error(error);
-            generalFunctions.captureSentryException(error);
+            generalFunctions.captureException(error);
             return { status: 500, json: { success: false, error: "Internal server error, please contact support" } };
         }
     }
@@ -109,7 +109,7 @@ class MemberFunctions {
         } catch (error) {
             console.error("MemberFunctions:inviteMember: Catch block");
             console.error(error);
-            generalFunctions.captureSentryException(error);
+            generalFunctions.captureException(error);
             return { status: 500, json: { success: false, error: "Internal server error, please contact support" } };
         }
     }
@@ -133,7 +133,7 @@ class MemberFunctions {
         } catch (error) {
             console.error("MemberFunctions:removeMember: Catch block");
             console.error(error);
-            generalFunctions.captureSentryException(error);
+            generalFunctions.captureException(error);
             return { status: 500, json: { success: false, error: "Internal server error, please contact support" } };
         }
     }

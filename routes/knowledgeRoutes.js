@@ -12,7 +12,7 @@ router.get("/:orgId/sources", reqOrgOwnerAuth, async (req, res) => {
     } catch (error) {
         console.error(`Knowledge router ${req.path} catch block`);
         console.error(error);
-        generalFunctions.captureSentryException(error);
+        generalFunctions.captureException(error);
         return res.status(500).json({ success: false, error: "Internal server error, please contact support" });
     }
 });
@@ -30,7 +30,7 @@ router.post("/:orgId/sources", reqOrgOwnerAuth, async (req, res) => {
     } catch (error) {
         console.error(`Knowledge router ${req.path} catch block`);
         console.error(error);
-        generalFunctions.captureSentryException(error);
+        generalFunctions.captureException(error);
         return res.status(500).json({ success: false, error: "Internal server error, please contact support" });
     }
 });
@@ -45,7 +45,7 @@ router.delete("/:orgId/sources/:sourceId", reqOrgOwnerAuth, async (req, res) => 
     } catch (error) {
         console.error(`Knowledge router ${req.path} catch block`);
         console.error(error);
-        generalFunctions.captureSentryException(error);
+        generalFunctions.captureException(error);
         return res.status(500).json({ success: false, error: "Internal server error, please contact support" });
     }
 });
@@ -60,7 +60,7 @@ router.post("/:orgId/sources/:sourceId/resync", reqOrgOwnerAuth, async (req, res
     } catch (error) {
         console.error(`Knowledge router ${req.path} catch block`);
         console.error(error);
-        generalFunctions.captureSentryException(error);
+        generalFunctions.captureException(error);
         return res.status(500).json({ success: false, error: "Internal server error, please contact support" });
     }
 });
@@ -77,7 +77,7 @@ router.get("/:orgId/chunks", reqOrgOwnerAuth, async (req, res) => {
     } catch (error) {
         console.error(`Knowledge router ${req.path} catch block`);
         console.error(error);
-        generalFunctions.captureSentryException(error);
+        generalFunctions.captureException(error);
         return res.status(500).json({ success: false, error: "Internal server error, please contact support" });
     }
 });

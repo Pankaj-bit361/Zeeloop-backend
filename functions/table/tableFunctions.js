@@ -18,7 +18,7 @@ class TableFunctions {
         } catch (error) {
             console.error("TableFunctions:listTables: Catch block");
             console.error(error);
-            generalFunctions.captureSentryException(error);
+            generalFunctions.captureException(error);
             return { status: 500, json: { success: false, error: "Internal server error, please contact support" } };
         }
     }
@@ -47,7 +47,7 @@ class TableFunctions {
         } catch (error) {
             console.error("TableFunctions:createTable: Catch block");
             console.error(error);
-            generalFunctions.captureSentryException(error);
+            generalFunctions.captureException(error);
             return { status: 500, json: { success: false, error: "Internal server error, please contact support" } };
         }
     }
@@ -67,7 +67,7 @@ class TableFunctions {
         } catch (error) {
             console.error("TableFunctions:getTable: Catch block");
             console.error(error);
-            generalFunctions.captureSentryException(error);
+            generalFunctions.captureException(error);
             return { status: 500, json: { success: false, error: "Internal server error, please contact support" } };
         }
     }
@@ -98,7 +98,7 @@ class TableFunctions {
         } catch (error) {
             console.error("TableFunctions:updateTable: Catch block");
             console.error(error);
-            generalFunctions.captureSentryException(error);
+            generalFunctions.captureException(error);
             return { status: 500, json: { success: false, error: "Internal server error, please contact support" } };
         }
     }
@@ -121,7 +121,7 @@ class TableFunctions {
         } catch (error) {
             console.error("TableFunctions:deleteTable: Catch block");
             console.error(error);
-            generalFunctions.captureSentryException(error);
+            generalFunctions.captureException(error);
             return { status: 500, json: { success: false, error: "Internal server error, please contact support" } };
         }
     }
@@ -164,7 +164,7 @@ class TableFunctions {
         } catch (error) {
             console.error("TableFunctions:listRows: Catch block");
             console.error(error);
-            generalFunctions.captureSentryException(error);
+            generalFunctions.captureException(error);
             return { status: 500, json: { success: false, error: "Internal server error, please contact support" } };
         }
     }
@@ -212,7 +212,7 @@ class TableFunctions {
         } catch (error) {
             console.error("TableFunctions:createRow: Catch block");
             console.error(error);
-            generalFunctions.captureSentryException(error);
+            generalFunctions.captureException(error);
             return { status: 500, json: { success: false, error: "Internal server error, please contact support" } };
         }
     }
@@ -267,7 +267,7 @@ class TableFunctions {
         } catch (error) {
             console.error("TableFunctions:updateRow: Catch block");
             console.error(error);
-            generalFunctions.captureSentryException(error);
+            generalFunctions.captureException(error);
             return { status: 500, json: { success: false, error: "Internal server error, please contact support" } };
         }
     }
@@ -291,7 +291,7 @@ class TableFunctions {
         } catch (error) {
             console.error("TableFunctions:deleteRow: Catch block");
             console.error(error);
-            generalFunctions.captureSentryException(error);
+            generalFunctions.captureException(error);
             return { status: 500, json: { success: false, error: "Internal server error, please contact support" } };
         }
     }
@@ -388,7 +388,7 @@ class TableFunctions {
         } catch (error) {
             console.error("TableFunctions:importRows: Catch block");
             console.error(error);
-            generalFunctions.captureSentryException(error);
+            generalFunctions.captureException(error);
             return { status: 500, json: { success: false, error: "Internal server error, please contact support" } };
         }
     }

@@ -31,7 +31,7 @@ class OrgFunctions {
         } catch (error) {
             console.error("OrgFunctions:getSettings: Catch block");
             console.error(error);
-            generalFunctions.captureSentryException(error);
+            generalFunctions.captureException(error);
             return { status: 500, json: { success: false, error: "Internal server error, please contact support" } };
         }
     }
@@ -118,7 +118,7 @@ class OrgFunctions {
         } catch (error) {
             console.error("OrgFunctions:updateSettings: Catch block");
             console.error(error);
-            generalFunctions.captureSentryException(error);
+            generalFunctions.captureException(error);
             return { status: 500, json: { success: false, error: "Internal server error, please contact support" } };
         }
     }
@@ -148,7 +148,7 @@ class OrgFunctions {
         } catch (error) {
             console.error("OrgFunctions:revealSecret: Catch block");
             console.error(error);
-            generalFunctions.captureSentryException(error);
+            generalFunctions.captureException(error);
             return { status: 500, json: { success: false, error: "Internal server error, please contact support" } };
         }
     }
@@ -184,7 +184,7 @@ class OrgFunctions {
         } catch (error) {
             console.error("OrgFunctions:rotateSecret: Catch block");
             console.error(error);
-            generalFunctions.captureSentryException(error);
+            generalFunctions.captureException(error);
             return { status: 500, json: { success: false, error: "Internal server error, please contact support" } };
         }
     }
@@ -256,7 +256,7 @@ class OrgFunctions {
         } catch (error) {
             console.error("OrgFunctions:getOnboarding: Catch block");
             console.error(error);
-            generalFunctions.captureSentryException(error);
+            generalFunctions.captureException(error);
             return { status: 500, json: { success: false, error: "Internal server error, please contact support" } };
         }
     }

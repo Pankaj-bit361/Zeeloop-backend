@@ -30,7 +30,7 @@ router.get("/google", (req, res) => {
     } catch (error) {
         console.error("OAuth router /google catch block");
         console.error(error);
-        generalFunctions.captureSentryException(error);
+        generalFunctions.captureException(error);
         return bounceToLogin(res, "google");
     }
 });
@@ -48,7 +48,7 @@ router.get("/google/callback", async (req, res) => {
     } catch (error) {
         console.error("OAuth router /google/callback catch block");
         console.error(error);
-        generalFunctions.captureSentryException(error);
+        generalFunctions.captureException(error);
         return bounceToLogin(res, "google");
     }
 });
@@ -61,7 +61,7 @@ router.get("/github", (req, res) => {
     } catch (error) {
         console.error("OAuth router /github catch block");
         console.error(error);
-        generalFunctions.captureSentryException(error);
+        generalFunctions.captureException(error);
         return bounceToLogin(res, "github");
     }
 });
@@ -79,7 +79,7 @@ router.get("/github/callback", async (req, res) => {
     } catch (error) {
         console.error("OAuth router /github/callback catch block");
         console.error(error);
-        generalFunctions.captureSentryException(error);
+        generalFunctions.captureException(error);
         return bounceToLogin(res, "github");
     }
 });

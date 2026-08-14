@@ -8,8 +8,20 @@ if (config.SENTRY_DSN) {
         Sentry = require("@sentry/node");
         Sentry.init({ dsn: config.SENTRY_DSN });
     } catch (error) {
-        console.log("GeneralFunctions: @sentry/node not installed, continuing without Sentry");
+        console.error("GeneralFunctions: @sentry/node not installed, continuing without Sentry");
         Sentry = null;
+    }
+}
+
+// Same deal for New Relic. server.js has already loaded the agent by the time
+// this module is required, so this just picks up the cached instance.
+let newrelic = null;
+if (config.NEW_RELIC_LICENSE_KEY) {
+    try {
+        newrelic = require("newrelic");
+    } catch (error) {
+        console.error("GeneralFunctions: newrelic not installed, continuing without it");
+        newrelic = null;
     }
 }
 
@@ -66,9 +78,17 @@ class GeneralFunctions {
         return crypto.timingSafeEqual(expectedBuf, providedBuf);
     }
 
-    captureSentryException(error) {
+    // Every catch block in the codebase routes through here, which makes it the
+    // one place worth teaching about new error sinks.
+    captureException(error) {
         if (Sentry) {
             Sentry.captureException(error);
+        }
+        // Without this New Relic only ever learns "a 500 happened" from the
+        // response status: the catch blocks swallow the exception and return a
+        // generic body, so the stack never reaches the Errors Inbox on its own.
+        if (newrelic) {
+            newrelic.noticeError(error);
         }
     }
 

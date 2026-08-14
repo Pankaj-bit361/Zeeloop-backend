@@ -15,7 +15,7 @@ const router = express.Router();
 function fail(req, res, error) {
     console.error(`Auth router ${req.path} catch block`);
     console.error(error);
-    generalFunctions.captureSentryException(error);
+    generalFunctions.captureException(error);
     return res.status(500).json({ success: false, error: "Internal server error, please contact support" });
 }
 

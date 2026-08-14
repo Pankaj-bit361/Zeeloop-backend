@@ -12,7 +12,7 @@ router.get("/:orgId/actions", reqOrgOwnerAuth, async (req, res) => {
     } catch (error) {
         console.error(`Action router ${req.path} catch block`);
         console.error(error);
-        generalFunctions.captureSentryException(error);
+        generalFunctions.captureException(error);
         return res.status(500).json({ success: false, error: "Internal server error, please contact support" });
     }
 });
@@ -36,7 +36,7 @@ router.post("/:orgId/actions", reqOrgOwnerAuth, async (req, res) => {
     } catch (error) {
         console.error(`Action router ${req.path} catch block`);
         console.error(error);
-        generalFunctions.captureSentryException(error);
+        generalFunctions.captureException(error);
         return res.status(500).json({ success: false, error: "Internal server error, please contact support" });
     }
 });
@@ -62,7 +62,7 @@ router.patch("/:orgId/actions/:actionId", reqOrgOwnerAuth, async (req, res) => {
     } catch (error) {
         console.error(`Action router ${req.path} catch block`);
         console.error(error);
-        generalFunctions.captureSentryException(error);
+        generalFunctions.captureException(error);
         return res.status(500).json({ success: false, error: "Internal server error, please contact support" });
     }
 });
@@ -77,7 +77,7 @@ router.delete("/:orgId/actions/:actionId", reqOrgOwnerAuth, async (req, res) => 
     } catch (error) {
         console.error(`Action router ${req.path} catch block`);
         console.error(error);
-        generalFunctions.captureSentryException(error);
+        generalFunctions.captureException(error);
         return res.status(500).json({ success: false, error: "Internal server error, please contact support" });
     }
 });
@@ -93,7 +93,7 @@ router.post("/:orgId/actions/:actionId/test", reqOrgOwnerAuth, async (req, res) 
     } catch (error) {
         console.error(`Action router ${req.path} catch block`);
         console.error(error);
-        generalFunctions.captureSentryException(error);
+        generalFunctions.captureException(error);
         return res.status(500).json({ success: false, error: "Internal server error, please contact support" });
     }
 });

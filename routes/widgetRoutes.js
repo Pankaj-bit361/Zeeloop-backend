@@ -16,7 +16,7 @@ router.post("/bootstrap", async (req, res) => {
     } catch (error) {
         console.error(`Widget router ${req.path} catch block`);
         console.error(error);
-        generalFunctions.captureSentryException(error);
+        generalFunctions.captureException(error);
         return res.status(500).json({ success: false, error: "Internal server error, please contact support" });
     }
 });
@@ -33,7 +33,7 @@ router.post("/messages", async (req, res) => {
     } catch (error) {
         console.error(`Widget router ${req.path} catch block`);
         console.error(error);
-        generalFunctions.captureSentryException(error);
+        generalFunctions.captureException(error);
         return res.status(500).json({ success: false, error: "Internal server error, please contact support" });
     }
 });
@@ -50,7 +50,7 @@ router.post("/actions/confirm", async (req, res) => {
     } catch (error) {
         console.error(`Widget router ${req.path} catch block`);
         console.error(error);
-        generalFunctions.captureSentryException(error);
+        generalFunctions.captureException(error);
         return res.status(500).json({ success: false, error: "Internal server error, please contact support" });
     }
 });
@@ -65,7 +65,7 @@ router.post("/conversations", async (req, res) => {
     } catch (error) {
         console.error(`Widget router ${req.path} catch block`);
         console.error(error);
-        generalFunctions.captureSentryException(error);
+        generalFunctions.captureException(error);
         return res.status(500).json({ success: false, error: "Internal server error, please contact support" });
     }
 });
@@ -83,7 +83,7 @@ router.post("/help", async (req, res) => {
     } catch (error) {
         console.error(`Widget router ${req.path} catch block`);
         console.error(error);
-        generalFunctions.captureSentryException(error);
+        generalFunctions.captureException(error);
         return res.status(500).json({ success: false, error: "Internal server error, please contact support" });
     }
 });
@@ -99,7 +99,7 @@ router.post("/feedback", async (req, res) => {
     } catch (error) {
         console.error(`Widget router ${req.path} catch block`);
         console.error(error);
-        generalFunctions.captureSentryException(error);
+        generalFunctions.captureException(error);
         return res.status(500).json({ success: false, error: "Internal server error, please contact support" });
     }
 });
