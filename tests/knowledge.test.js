@@ -48,23 +48,50 @@ describe("POST /api/knowledge/:orgId/sources — validation and type-specific re
         assert.equal(result.status, 400);
     });
 
-    test("SITEMAP ingestion is deferred (§13) — returns 501, and persists status FAILED not the stale in-memory PENDING", async () => {
+    // SITEMAP is implemented as of §1.1. It is no longer a 501; a URL with no
+    // reachable sitemap now fails on its merits, which is a different and
+    // better failure. Parsing and the include/exclude heuristics are covered
+    // exhaustively in sitemap.test.js without touching the network.
+    test("SITEMAP is accepted, and a URL with no sitemap fails on its merits rather than as unimplemented", async () => {
         const result = await post(`/api/knowledge/${SEED_ORG_ID}/sources`, {
             headers: AUTH_A,
-            body: { type: "SITEMAP", name: `probe-sitemap-${randomSuffix()}`, url: "https://example.com/sitemap.xml" },
+            body: {
+                type: "SITEMAP",
+                name: `probe-sitemap-${randomSuffix()}`,
+                // Reserved by RFC 2606 and guaranteed never to resolve, so this
+                // exercises the failure path without depending on a real site.
+                url: "https://sitemap-probe.invalid/sitemap.xml",
+            },
         });
-        assert.equal(result.status, 501);
+        assert.notEqual(result.status, 501, "SITEMAP is implemented now");
         createdSourceIds.push(result.json.data.sourceId);
 
-        // BUG (see report): createSource's 501 response body still shows the
-        // stale in-memory `status: PENDING` captured before _ingestSource ran,
-        // even though the persisted document is actually FAILED with lastError
-        // set. This assertion documents ACTUAL behavior (xfail-style) rather
-        // than the ideal — flip to "FAILED" once the response bug is fixed.
         const listed = await get(`/api/knowledge/${SEED_ORG_ID}/sources`, { headers: AUTH_A });
         const persisted = listed.json.data.find((s) => s.sourceId === result.json.data.sourceId);
-        assert.equal(persisted.status, "FAILED", "the PERSISTED source should be FAILED after a not-implemented ingest");
-        assert.ok(persisted.lastError, "persisted source should carry the not-implemented error message");
+        assert.equal(persisted.status, "FAILED", "an unreachable sitemap should persist as FAILED");
+        assert.ok(persisted.lastError, "and should say why");
+        assert.equal(
+            /not implemented/i.test(persisted.lastError),
+            false,
+            "the failure should be about the sitemap, not about the feature missing"
+        );
+    });
+
+    test("POST /api/knowledge/:orgId/sitemap/discover previews URLs without ingesting", async () => {
+        const result = await post(`/api/knowledge/${SEED_ORG_ID}/sitemap/discover`, {
+            headers: AUTH_A,
+            body: { url: "https://sitemap-probe.invalid/sitemap.xml" },
+        });
+        // Unreachable host: a clean 422 explaining the problem, not a 500.
+        assert.equal(result.status, 422);
+        assert.ok(result.json.error);
+    });
+
+    test("sitemap discovery requires auth", async () => {
+        const result = await post(`/api/knowledge/${SEED_ORG_ID}/sitemap/discover`, {
+            body: { url: "https://acme.test/sitemap.xml" },
+        });
+        assert.equal(result.status, 401);
     });
 
     test("FILE ingestion is deferred (§13) — returns 501", async () => {

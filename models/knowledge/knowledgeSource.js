@@ -10,6 +10,12 @@ const knowledgeSourceSchema = new mongoose.Schema(
         url: { type: String },
         content: { type: String }, // SNIPPET only
         status: { type: String, enum: Object.values(SourceStatus), default: SourceStatus.PENDING },
+        // SITEMAP only: URLs the customer re-included in the review step after
+        // the heuristics excluded them. Empty means "trust the heuristics".
+        includedUrls: { type: [String], default: [] },
+        // Per-source override for main-content extraction, for sites where
+        // auto-detection picks the wrong container (§1.5).
+        contentSelector: { type: String, default: "" },
         chunkCount: { type: Number, default: 0 },
         lastSyncedAt: { type: Date },
         lastError: { type: String },

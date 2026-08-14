@@ -18,6 +18,21 @@ router.get("/:orgId/sources", reqOrgOwnerAuth, async (req, res) => {
     }
 });
 
+router.post("/:orgId/sitemap/discover", reqOrgOwnerAuth, async (req, res) => {
+    try {
+        const { status, json } = await knowledgeFunctions.discoverSitemap({
+            orgId: req.params.orgId,
+            url: req.body.url,
+        });
+        return res.status(status).json(json);
+    } catch (error) {
+        console.error(`Knowledge router ${req.path} catch block`);
+        console.error(error);
+        generalFunctions.captureException(error);
+        return res.status(500).json({ success: false, error: "Internal server error, please contact support" });
+    }
+});
+
 router.post("/:orgId/sources", reqOrgOwnerAuth, ...sourceCapacity, async (req, res) => {
     try {
         const { status, json } = await knowledgeFunctions.createSource({
@@ -26,6 +41,8 @@ router.post("/:orgId/sources", reqOrgOwnerAuth, ...sourceCapacity, async (req, r
             name: req.body.name,
             url: req.body.url,
             content: req.body.content,
+            includedUrls: req.body.includedUrls,
+            contentSelector: req.body.contentSelector,
         });
         return res.status(status).json(json);
     } catch (error) {
