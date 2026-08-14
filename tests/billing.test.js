@@ -16,7 +16,7 @@
 const { test, describe, before, after } = require("node:test");
 const assert = require("node:assert/strict");
 const crypto = require("node:crypto");
-const { get, post, devLogin, authHeader, SEED_ORG_ID, randomSuffix } = require("./helpers/client");
+const { get, post, devLogin, authHeader, createIsolatedOrg, SEED_ORG_ID, randomSuffix } = require("./helpers/client");
 
 const BASE_URL = process.env.TEST_BASE_URL || "http://localhost:4000";
 const WEBHOOK_SECRET = process.env.LEMON_SQUEEZY_WEBHOOK_SECRET || "test_webhook_secret";
@@ -226,39 +226,26 @@ describe("POST /webhooks/billing — idempotency", () => {
     });
 });
 
-// These drive the seeded org rather than a synthetic id, because reading the
-// result back needs a real token and devLogin refuses an org that does not
-// exist. State is restored afterwards so the suite is re-runnable.
+// Each of these owns a freshly created workspace. They must never touch the
+// seeded org: `node --test` runs files concurrently, so downgrading the shared
+// org's plan mid-run would fail whichever other suite happened to be creating
+// an action or a table at that moment.
 describe("webhook → effective plan", () => {
-    const SUBSCRIPTION_ID = randomSuffix();
-
-    after(async () => {
-        if (!billingConfigured) return;
-        await postWebhook(
-            subscriptionEvent({
-                orgId: SEED_ORG_ID,
-                planId: "STARTER",
-                status: "active",
-                eventId: randomSuffix(),
-                subscriptionId: SUBSCRIPTION_ID,
-            })
-        );
-    });
-
     test("an active subscription event upgrades the workspace's effective plan", async (t) => {
         if (!billingConfigured) return t.skip("no billing provider configured");
+        const org = await createIsolatedOrg("billing-upgrade");
 
         await postWebhook(
             subscriptionEvent({
-                orgId: SEED_ORG_ID,
+                orgId: org.orgId,
                 planId: "GROWTH",
                 status: "active",
                 eventId: randomSuffix(),
-                subscriptionId: SUBSCRIPTION_ID,
+                subscriptionId: randomSuffix(),
             })
         );
 
-        const result = await get(`/api/org/${SEED_ORG_ID}/billing`, { headers: AUTH_A });
+        const result = await get(`/api/org/${org.orgId}/billing`, { headers: authHeader(org.token) });
         assert.equal(result.status, 200);
         assert.equal(result.json.data.plan.id, "GROWTH");
         assert.equal(result.json.data.status, "ACTIVE");
@@ -266,22 +253,87 @@ describe("webhook → effective plan", () => {
 
     test("a payment failure keeps the plan alive inside the grace window", async (t) => {
         if (!billingConfigured) return t.skip("no billing provider configured");
+        const org = await createIsolatedOrg("billing-pastdue");
+        const subscriptionId = randomSuffix();
 
+        await postWebhook(
+            subscriptionEvent({
+                orgId: org.orgId,
+                planId: "GROWTH",
+                status: "active",
+                eventId: randomSuffix(),
+                subscriptionId,
+            })
+        );
         const failure = subscriptionEvent({
-            orgId: SEED_ORG_ID,
+            orgId: org.orgId,
             planId: "GROWTH",
             status: "past_due",
             eventId: randomSuffix(),
-            subscriptionId: SUBSCRIPTION_ID,
+            subscriptionId,
         });
         failure.meta.event_name = "subscription_payment_failed";
         await postWebhook(failure);
 
-        const result = await get(`/api/org/${SEED_ORG_ID}/billing`, { headers: AUTH_A });
+        const result = await get(`/api/org/${org.orgId}/billing`, { headers: authHeader(org.token) });
         assert.equal(result.status, 200);
         assert.equal(result.json.data.status, "PAST_DUE");
         assert.equal(result.json.data.plan.id, "GROWTH", "an expired card is not a decision to leave");
         assert.equal(result.json.data.downgradeReason, "PAYMENT_FAILED_IN_GRACE");
         assert.ok(result.json.data.gracePeriodEndsAt);
+    });
+
+    test("an expired subscription drops the workspace to FREE, losing tables and actions", async (t) => {
+        if (!billingConfigured) return t.skip("no billing provider configured");
+        const org = await createIsolatedOrg("billing-expired");
+
+        const expiry = subscriptionEvent({
+            orgId: org.orgId,
+            planId: "GROWTH",
+            status: "expired",
+            eventId: randomSuffix(),
+            subscriptionId: randomSuffix(),
+        });
+        expiry.meta.event_name = "subscription_expired";
+        await postWebhook(expiry);
+
+        const result = await get(`/api/org/${org.orgId}/billing`, { headers: authHeader(org.token) });
+        assert.equal(result.status, 200);
+        assert.equal(result.json.data.plan.id, "FREE");
+        assert.equal(result.json.data.plan.features.includes("TABLES"), false);
+    });
+});
+
+// The gates are unit tested in planGates.test.js; this proves they are actually
+// mounted on the create routes, which is the part a unit test cannot see.
+describe("plan gates are mounted on create routes", () => {
+    test("a FREE workspace cannot create a table", async () => {
+        const org = await createIsolatedOrg("gate-tables");
+        if (billingConfigured) {
+            const expiry = subscriptionEvent({
+                orgId: org.orgId,
+                planId: "FREE",
+                status: "expired",
+                eventId: randomSuffix(),
+                subscriptionId: randomSuffix(),
+            });
+            expiry.meta.event_name = "subscription_expired";
+            await postWebhook(expiry);
+        }
+
+        const result = await post(`/api/org/${org.orgId}/tables`, {
+            headers: authHeader(org.token),
+            body: { name: "Orders", columns: [{ name: "id", type: "string", isIdentityKey: true }] },
+        });
+
+        // A brand-new org is on a STARTER trial, which includes tables. Only
+        // once expired does the gate bite — so this asserts the gate exists
+        // rather than asserting a particular trial policy.
+        if (billingConfigured) {
+            assert.equal(result.status, 402);
+            assert.equal(result.json.reason, "PLAN_FEATURE");
+        } else {
+            assert.ok([200, 201].includes(result.status));
+        }
     });
 });

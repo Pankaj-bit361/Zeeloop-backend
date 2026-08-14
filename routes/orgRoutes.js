@@ -4,6 +4,7 @@ const userFunctions = require("../functions/user/userFunctions");
 const memberFunctions = require("../functions/member/memberFunctions");
 const generalFunctions = require("../functions/utilFunctions/generalFunctions");
 const { reqOrgOwnerAuth } = require("../middlewares/auth");
+const { seatCapacity } = require("../middlewares/planGates");
 
 const router = express.Router();
 
@@ -122,7 +123,7 @@ router.get("/:orgId/members", reqOrgOwnerAuth, async (req, res) => {
     }
 });
 
-router.post("/:orgId/members", reqOrgOwnerAuth, async (req, res) => {
+router.post("/:orgId/members", reqOrgOwnerAuth, ...seatCapacity, async (req, res) => {
     try {
         const { status, json } = await memberFunctions.inviteMember({
             orgId: req.params.orgId,

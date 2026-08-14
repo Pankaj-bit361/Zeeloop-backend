@@ -2,6 +2,7 @@ const express = require("express");
 const tableFunctions = require("../functions/table/tableFunctions");
 const generalFunctions = require("../functions/utilFunctions/generalFunctions");
 const { reqOrgOwnerAuth } = require("../middlewares/auth");
+const { tableCapacity } = require("../middlewares/planGates");
 
 const router = express.Router();
 
@@ -17,7 +18,7 @@ router.get("/:orgId/tables", reqOrgOwnerAuth, async (req, res) => {
     }
 });
 
-router.post("/:orgId/tables", reqOrgOwnerAuth, async (req, res) => {
+router.post("/:orgId/tables", reqOrgOwnerAuth, ...tableCapacity, async (req, res) => {
     try {
         const { status, json } = await tableFunctions.createTable({
             orgId: req.params.orgId,

@@ -2,6 +2,7 @@ const express = require("express");
 const knowledgeFunctions = require("../functions/knowledge/knowledgeFunctions");
 const generalFunctions = require("../functions/utilFunctions/generalFunctions");
 const { reqOrgOwnerAuth } = require("../middlewares/auth");
+const { sourceCapacity } = require("../middlewares/planGates");
 
 const router = express.Router();
 
@@ -17,7 +18,7 @@ router.get("/:orgId/sources", reqOrgOwnerAuth, async (req, res) => {
     }
 });
 
-router.post("/:orgId/sources", reqOrgOwnerAuth, async (req, res) => {
+router.post("/:orgId/sources", reqOrgOwnerAuth, ...sourceCapacity, async (req, res) => {
     try {
         const { status, json } = await knowledgeFunctions.createSource({
             orgId: req.params.orgId,

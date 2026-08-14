@@ -2,6 +2,7 @@ const express = require("express");
 const actionFunctions = require("../functions/action/actionFunctions");
 const generalFunctions = require("../functions/utilFunctions/generalFunctions");
 const { reqOrgOwnerAuth } = require("../middlewares/auth");
+const { actionCapacity } = require("../middlewares/planGates");
 
 const router = express.Router();
 
@@ -17,7 +18,7 @@ router.get("/:orgId/actions", reqOrgOwnerAuth, async (req, res) => {
     }
 });
 
-router.post("/:orgId/actions", reqOrgOwnerAuth, async (req, res) => {
+router.post("/:orgId/actions", reqOrgOwnerAuth, ...actionCapacity, async (req, res) => {
     try {
         const { status, json } = await actionFunctions.createAction({
             orgId: req.params.orgId,

@@ -21,6 +21,9 @@ const {
     EscalationMode,
     ColumnType,
     AuthProvider,
+    PlanId,
+    SubscriptionStatus,
+    BillingProvider,
     IdPrefix,
 } = require("../config/enums");
 const generalFunctions = require("../functions/utilFunctions/generalFunctions");
@@ -40,6 +43,8 @@ const Procedure = require("../models/procedure/procedure");
 const Conversation = require("../models/conversation/conversation");
 const Message = require("../models/conversation/message");
 const TurnTrace = require("../models/trace/turnTrace");
+const Subscription = require("../models/billing/subscription");
+const UsageRecord = require("../models/billing/usageRecord");
 
 const ORG_ID = "org_demo_acmeship";
 
@@ -103,7 +108,26 @@ async function seed() {
         Conversation.deleteMany({ orgId: ORG_ID }),
         Message.deleteMany({ orgId: ORG_ID }),
         TurnTrace.deleteMany({ orgId: ORG_ID }),
+        Subscription.deleteMany({ orgId: { $in: [ORG_ID, ...strayOrgIds] } }),
+        UsageRecord.deleteMany({ orgId: { $in: [ORG_ID, ...strayOrgIds] } }),
     ]);
+
+    /* ---------------- Subscription ---------------- */
+    // The demo org models a real paying customer, not a trial. Without this it
+    // would land on the lazily-created STARTER trial and its five seeded
+    // actions would sit exactly on that plan's ceiling, so the first action
+    // anyone created in the dashboard would be refused.
+    const periodStart = new Date();
+    const periodEnd = new Date(periodStart.getTime() + 30 * 24 * 60 * 60 * 1000);
+    await Subscription.create({
+        orgId: ORG_ID,
+        subscriptionId: generalFunctions.generateId(IdPrefix.SUBSCRIPTION),
+        plan: PlanId.SCALE,
+        status: SubscriptionStatus.ACTIVE,
+        provider: BillingProvider.NONE,
+        currentPeriodStart: periodStart,
+        currentPeriodEnd: periodEnd,
+    });
 
     /* ---------------- Org ---------------- */
     const widgetSecret = "ws_live_demo_secret_do_not_use_in_production";
