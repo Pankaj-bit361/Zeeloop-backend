@@ -29,6 +29,7 @@ const tableRoutes = require("./routes/tableRoutes");
 const billingRoutes = require("./routes/billingRoutes");
 const webhookRoutes = require("./routes/webhookRoutes");
 const { requestContext } = require("./middlewares/requestContext");
+const { widgetRateLimit } = require("./middlewares/rateLimit");
 
 const app = express();
 
@@ -78,7 +79,9 @@ app.use("/auth", oauthRoutes);
 // and the signature is the credential.
 app.use("/webhooks", webhookRoutes);
 
-app.use("/api/widget", widgetCors, widgetRoutes);
+// Rate limiting sits on the widget mount rather than inside the router, so a
+// route added later is covered by default instead of by remembering.
+app.use("/api/widget", widgetCors, widgetRateLimit, widgetRoutes);
 
 // ── Widget static assets ─────────────────────────────────────
 // widget.js is embedded by customer sites; the frame is loaded in an iframe on

@@ -14,10 +14,18 @@ const {
     IdPrefix,
     TurnOutcome,
     SourceStatus,
+    QuotaState,
 } = require("../../config/enums");
 const generalFunctions = require("../utilFunctions/generalFunctions");
 const themeDerivation = require("../utilFunctions/themeDerivation");
+const usageFunctions = require("../billing/usageFunctions");
 const agentFunctions = require("../agent/agentFunctions");
+
+// Shown to end users on a workspace that has hit its conversation quota or cost
+// ceiling. Deliberately says nothing about billing: the visitor is the
+// customer's customer, and "they did not pay their bill" is not their problem.
+const DEGRADED_REPLY =
+    "I'm not able to answer right now. Someone from the team will follow up — thanks for your patience.";
 const actionFunctions = require("../action/actionFunctions");
 
 class ChatFunctions {
@@ -135,6 +143,7 @@ class ChatFunctions {
             if (conversationId && !conversation) {
                 return { status: 404, json: { success: false, error: "Conversation not found" } };
             }
+            const isNewConversation = !conversation;
             if (!conversation) {
                 conversation = await Conversation.create({
                     orgId: org.orgId,
@@ -157,6 +166,48 @@ class ChatFunctions {
                 role: MessageRole.USER,
                 content,
             });
+
+            // Quota is checked after the question is stored, not before (§0.3).
+            // A workspace that hits its ceiling still wants to see what its
+            // customers were asking while capped — that is the demand signal
+            // that justifies the upgrade. The visitor gets a graceful message
+            // rather than an error, because a support widget that returns a 500
+            // reflects on the customer, not on us.
+            const quota = await usageFunctions.checkQuota({ orgId: org.orgId });
+            if (quota.state === QuotaState.EXCEEDED) {
+                console.log("ChatFunctions:sendMessage: quota exceeded for orgId:", org.orgId, "reason:", quota.reason);
+                const degradedMessage = await Message.create({
+                    orgId: org.orgId,
+                    messageId: generalFunctions.generateId(IdPrefix.MESSAGE),
+                    conversationId,
+                    role: MessageRole.ASSISTANT,
+                    content: DEGRADED_REPLY,
+                });
+
+                conversation.turnCount += 1;
+                conversation.lastMessageAt = new Date();
+                conversation.lastMessagePreview = content.slice(0, 140);
+                await conversation.save();
+
+                await usageFunctions.recordTurn({ orgId: org.orgId, isNewConversation });
+
+                return {
+                    status: 200,
+                    json: {
+                        success: true,
+                        data: {
+                            conversationId,
+                            message: degradedMessage,
+                            outcome: TurnOutcome.ERROR,
+                            awaitingConfirmation: false,
+                            // The widget can use this to hide the composer; the
+                            // dashboard uses the reason to explain why.
+                            degraded: true,
+                            reason: quota.reason,
+                        },
+                    },
+                };
+            }
 
             const turn = await agentFunctions.runTurn({
                 org,
@@ -190,6 +241,16 @@ class ChatFunctions {
                 conversation.endUserId = endUser.endUserId;
             }
             await conversation.save();
+
+            // Metered after the turn completes, never before — a turn that threw
+            // should not be billed to the customer.
+            await usageFunctions.recordTurn({
+                orgId: org.orgId,
+                costUsd: turn.costUsd || 0,
+                inputTokens: turn.inputTokens || 0,
+                outputTokens: turn.outputTokens || 0,
+                isNewConversation,
+            });
 
             return {
                 status: 200,
