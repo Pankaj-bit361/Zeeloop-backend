@@ -18,7 +18,36 @@ class LlmError extends Error {
 // means the pipeline falls back to fusion order. Swapping a provider means
 // changing one method here.
 class LlmFunctions {
-    async complete({ model, system, messages, maxTokens }) {
+    // Retries once against FALLBACK_MODEL on a 5xx or a network failure (§8.3).
+    // Deliberately not on 4xx: a bad request or an exhausted key fails the same
+    // way on any model, and retrying just doubles the latency before the same
+    // error.
+    //
+    // There is no equivalent for embed(). Falling back to a different embedding
+    // model would produce vectors in a different space from every chunk already
+    // stored, so retrieval would silently return nonsense — strictly worse than
+    // failing. Changing EMBED_MODEL means re-embedding the corpus.
+    async complete(params) {
+        try {
+            return await this._completeOnce(params);
+        } catch (error) {
+            const retryable = !error.status || error.status >= 500;
+            const fallback = config.FALLBACK_MODEL;
+            const alreadyFallback = (params.model || config.SMALL_MODEL) === fallback;
+
+            if (!retryable || !fallback || alreadyFallback) throw error;
+
+            console.error(
+                "LlmFunctions:complete: primary model failed, retrying on fallback:",
+                fallback,
+                "status:",
+                error.status
+            );
+            return await this._completeOnce({ ...params, model: fallback });
+        }
+    }
+
+    async _completeOnce({ model, system, messages, maxTokens }) {
         console.log("LlmFunctions:complete: model:", model);
         // Card and phone numbers never need to reach a third-party model to
         // answer a support question, so they are scrubbed here — the one place

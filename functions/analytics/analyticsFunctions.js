@@ -5,6 +5,15 @@ const config = require("../../config/config");
 const { ConversationStatus, MessageRole, TurnOutcome, FeedbackRating } = require("../../config/enums");
 const generalFunctions = require("../utilFunctions/generalFunctions");
 
+// The resolution definition (§3.3), written once and enforced in exactly one
+// place. It is quoted verbatim in the dashboard and in the docs, because a
+// resolution number that cannot be defended in a support ticket cannot be
+// charged for either — spec.md §13.1 makes locking this a prerequisite for any
+// resolution-based pricing.
+const RESOLUTION_DEFINITION =
+    "Resolved = the agent answered, no escalation occurred, no human replied, the visitor did not " +
+    "return on the same thread within 24 hours, and the answer was not marked unhelpful.";
+
 class AnalyticsFunctions {
     // GET /api/analytics/:orgId/overview
     async getOverview({ orgId, days }) {
@@ -19,7 +28,7 @@ class AnalyticsFunctions {
             const since = new Date(Date.now() - windowDays * 24 * 60 * 60 * 1000);
 
             const seriesSince = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000);
-            const [conversationAgg, outcomeAgg, groundedAgg, dailyAgg, tokenAgg] = await Promise.all([
+            const [conversationAgg, outcomeAgg, agentInvolved, groundedAgg, dailyAgg, tokenAgg] = await Promise.all([
                 Conversation.aggregate([
                     { $match: { orgId, createdAt: { $gte: since } } },
                     {
@@ -36,6 +45,11 @@ class AnalyticsFunctions {
                     { $match: { orgId, createdAt: { $gte: since } } },
                     { $group: { _id: "$outcome", count: { $sum: 1 } } },
                 ]),
+                // Conversations the agent actually took a turn in. A single
+                // rate cannot tell "the agent never got involved" from "the
+                // agent tried and failed", and those are opposite problems
+                // with opposite fixes (§3.3).
+                Conversation.countDocuments({ orgId, createdAt: { $gte: since }, turnCount: { $gt: 0 } }),
                 TurnTrace.aggregate([
                     { $match: { orgId, createdAt: { $gte: since } } },
                     {
@@ -92,8 +106,22 @@ class AnalyticsFunctions {
                     data: {
                         windowDays,
                         conversations: conversationStats.total,
+                        // Kept under its original name so existing dashboard
+                        // callers do not break; it is the same number as
+                        // automationRate below.
                         autonomousResolutionRate:
                             conversationStats.total > 0 ? conversationStats.resolved / conversationStats.total : 0,
+                        resolutionDefinition: RESOLUTION_DEFINITION,
+                        // The three-tier split (§3.3). automationRate is the
+                        // business number; a low involvementRate is a coverage
+                        // problem (the agent is not being reached), while a low
+                        // resolutionRate is a quality problem (it is reached and
+                        // fails). Reporting one number hides which you have.
+                        automationRate:
+                            conversationStats.total > 0 ? conversationStats.resolved / conversationStats.total : 0,
+                        involvementRate: conversationStats.total > 0 ? agentInvolved / conversationStats.total : 0,
+                        resolutionRate: agentInvolved > 0 ? conversationStats.resolved / agentInvolved : null,
+                        agentInvolvedConversations: agentInvolved,
                         escalations: conversationStats.escalated,
                         groundednessPassRate: groundedStats.total > 0 ? groundedStats.grounded / groundedStats.total : null,
                         costPerResolution:
@@ -226,3 +254,4 @@ class AnalyticsFunctions {
 }
 
 module.exports = new AnalyticsFunctions();
+module.exports.RESOLUTION_DEFINITION = RESOLUTION_DEFINITION;

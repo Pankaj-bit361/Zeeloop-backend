@@ -18,6 +18,7 @@ const config = require("./config/config");
 const generalFunctions = require("./functions/utilFunctions/generalFunctions");
 const analyticsFunctions = require("./functions/analytics/analyticsFunctions");
 const complianceFunctions = require("./functions/compliance/complianceFunctions");
+const healthFunctions = require("./functions/health/healthFunctions");
 const widgetRoutes = require("./routes/widgetRoutes");
 const knowledgeRoutes = require("./routes/knowledgeRoutes");
 const actionRoutes = require("./routes/actionRoutes");
@@ -70,6 +71,14 @@ const dashboardCors = cors({ origin: config.CORS_DASHBOARD_ORIGINS, credentials:
 // service and leave nothing serving at all.
 app.get("/", (req, res) => res.status(200).json({ success: true, status: "ok" }));
 app.get("/health", (req, res) => res.status(200).json({ success: true, status: "ok" }));
+
+// Deep health is a different question from liveness: "can this deployment
+// actually do its job". For humans and uptime monitors, never for the load
+// balancer — see the note above.
+app.get("/health/deep", async (req, res) => {
+    const { status, json } = await healthFunctions.deepCheck();
+    return res.status(status).json(json);
+});
 
 // OAuth round-trip. Root-mounted and CORS-free: the provider redirect URIs are
 // registered as ${API_URL}/auth/<provider>/callback and every hop is a top-level
@@ -144,6 +153,10 @@ async function connectWithRetry() {
     try {
         await mongoose.connect(config.MONGODB_URI, { serverSelectionTimeoutMS: 5000 });
         console.log("Server: connected to MongoDB");
+        // Loud, not fatal. Without the Atlas search indexes retrieval returns
+        // nothing and the agent abstains from every question — indistinguishable
+        // from an empty knowledge base unless someone says so at boot (§8.3).
+        await healthFunctions.assertSearchIndexes();
     } catch (error) {
         console.error("Server: MongoDB connection failed, retrying in 5s");
         console.error(error.message);

@@ -53,6 +53,10 @@ module.exports = {
     // OpenRouter is OpenAI-compatible, so these can be any slug it serves
     SMALL_MODEL: process.env.SMALL_MODEL || "anthropic/claude-haiku-4.5",
     LARGE_MODEL: process.env.LARGE_MODEL || "anthropic/claude-sonnet-5",
+    // Retried once when the primary model 5xxes or the request fails outright
+    // (§8.3). Chat only — see the note on LlmFunctions.complete for why
+    // embeddings must never fall back.
+    FALLBACK_MODEL: process.env.FALLBACK_MODEL || "openai/gpt-5-mini",
     // Must produce vectors matching EMBEDDING_DIM. Gemini Embedding 2 has
     // flexible output dims (128–3072); we request EMBEDDING_DIM explicitly.
     EMBED_MODEL: process.env.EMBED_MODEL || "google/gemini-embedding-2",
