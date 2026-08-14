@@ -14,6 +14,7 @@ const Action = require("../../models/action/action");
 const Procedure = require("../../models/procedure/procedure");
 const TurnTrace = require("../../models/trace/turnTrace");
 const generalFunctions = require("../utilFunctions/generalFunctions");
+const redactionFunctions = require("../utilFunctions/redactionFunctions");
 const llmFunctions = require("../utilFunctions/llmFunctions");
 const actionFunctions = require("../action/actionFunctions");
 
@@ -746,7 +747,13 @@ class AgentFunctions {
 
     async _writeTrace(trace) {
         try {
-            await TurnTrace.create(trace);
+            // Redacted on the way in, not on the way out (§8.1). A trace is kept
+            // for months and read by the eval tooling, so PII that reaches this
+            // collection is PII we now have to find and purge later. The
+            // redactor walks the whole document because the customer's email
+            // can be in rawQuery, rewrittenQuery, a retrieved chunk, or a tool
+            // call's arguments.
+            await TurnTrace.create(redactionFunctions.redactForStorage(trace));
         } catch (error) {
             console.error("AgentFunctions:_writeTrace: Catch block");
             console.error(error);

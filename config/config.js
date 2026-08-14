@@ -114,6 +114,12 @@ module.exports = {
     // Redact emails, phone numbers and card-shaped digits before anything is
     // written to TurnTrace or sent to a model provider.
     PII_REDACTION_ENABLED: process.env.PII_REDACTION_ENABLED !== "false",
+    // Emails are redacted from stored traces always, but only from model input
+    // when this is on. "Check the order for maya@brightloop.io" loses its
+    // subject otherwise — and identity is proven by a signed identify()
+    // payload, not by an address typed into a message, so leaving it in does
+    // not unlock anything.
+    PII_REDACT_MODEL_EMAIL: process.env.PII_REDACT_MODEL_EMAIL === "true",
 
     CORS_DASHBOARD_ORIGINS: (process.env.CORS_DASHBOARD_ORIGINS || "http://localhost:5173").split(","),
     JSON_BODY_LIMIT: "1mb",

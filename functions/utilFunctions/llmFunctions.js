@@ -1,5 +1,6 @@
 const config = require("../../config/config");
 const generalFunctions = require("./generalFunctions");
+const redactionFunctions = require("./redactionFunctions");
 
 // Typed error so every caller can decide fail-open vs fail-closed.
 class LlmError extends Error {
@@ -19,6 +20,16 @@ class LlmError extends Error {
 class LlmFunctions {
     async complete({ model, system, messages, maxTokens }) {
         console.log("LlmFunctions:complete: model:", model);
+        // Card and phone numbers never need to reach a third-party model to
+        // answer a support question, so they are scrubbed here — the one place
+        // every completion passes through. Emails are left in by default
+        // because they are frequently what the question is about; see
+        // PII_REDACT_MODEL_EMAIL.
+        messages = (messages || []).map((message) =>
+            typeof message.content === "string"
+                ? { ...message, content: redactionFunctions.redactForModel(message.content) }
+                : message
+        );
         const response = await fetch(`${config.OPENROUTER_BASE_URL}/chat/completions`, {
             method: "POST",
             headers: {

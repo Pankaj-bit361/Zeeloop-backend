@@ -17,6 +17,7 @@ const cron = require("node-cron");
 const config = require("./config/config");
 const generalFunctions = require("./functions/utilFunctions/generalFunctions");
 const analyticsFunctions = require("./functions/analytics/analyticsFunctions");
+const complianceFunctions = require("./functions/compliance/complianceFunctions");
 const widgetRoutes = require("./routes/widgetRoutes");
 const knowledgeRoutes = require("./routes/knowledgeRoutes");
 const actionRoutes = require("./routes/actionRoutes");
@@ -27,6 +28,7 @@ const oauthRoutes = require("./routes/oauthRoutes");
 const orgRoutes = require("./routes/orgRoutes");
 const tableRoutes = require("./routes/tableRoutes");
 const billingRoutes = require("./routes/billingRoutes");
+const complianceRoutes = require("./routes/complianceRoutes");
 const webhookRoutes = require("./routes/webhookRoutes");
 const { requestContext } = require("./middlewares/requestContext");
 const { widgetRateLimit } = require("./middlewares/rateLimit");
@@ -121,6 +123,7 @@ app.use("/api/org", dashboardCors, conversationRoutes);
 app.use("/api/org", dashboardCors, tableRoutes);
 app.use("/api/org", dashboardCors, orgRoutes);
 app.use("/api/org", dashboardCors, billingRoutes);
+app.use("/api/org", dashboardCors, complianceRoutes);
 app.use("/api/analytics", dashboardCors, analyticsRoutes);
 
 app.use((req, res) => {
@@ -158,3 +161,13 @@ connectWithRetry();
 cron.schedule(config.RESOLUTION_CRON, () => {
     analyticsFunctions.computeResolutions();
 });
+
+// Retention purge (§8.1). Disabled unless RETENTION_DAYS is set — a workspace
+// that has not chosen a window keeps its data, and an unset variable must never
+// read as "delete everything".
+if (config.RETENTION_DAYS > 0) {
+    cron.schedule(config.RETENTION_CRON, () => {
+        complianceFunctions.purgeExpired();
+    });
+    console.log(`Server: retention purge scheduled (${config.RETENTION_DAYS} days, ${config.RETENTION_CRON})`);
+}
