@@ -111,6 +111,7 @@ class RevealFunctions {
                             sections: [...ALWAYS_VISIBLE, ...everything],
                             showAll: true,
                             hidden: [],
+                            justRevealed: [],
                             requiresApproval,
                         },
                     },
@@ -130,12 +131,33 @@ class RevealFunctions {
 
             const next = [...new Set([...already, ...earned])];
 
+            /* Sections crossing the line on THIS call. The dashboard announces
+               these, so it matters that the list is computed before the write
+               and returned exactly once: the write is what makes the next call
+               return an empty `justRevealed`, which is what stops the same
+               celebration firing on every page load forever.
+
+               A workspace's very first call is excluded. Someone who signs up,
+               imports a busy help centre and lands on the dashboard has not
+               "unlocked" four things — they simply have a workspace, and
+               congratulating them for it is noise. */
+            const firstEver = !org.reveal?.firstLoadAt;
+            const justRevealed = firstEver ? [] : next.filter((section) => !already.includes(section));
+
             // Write only on growth. A findOneAndUpdate on every dashboard load
             // is a write per page view for a value that changes a handful of
             // times in a workspace's life.
-            if (next.length !== already.length) {
-                await Org.updateOne({ orgId }, { $set: { "reveal.sections": next } });
-                console.log("RevealFunctions:getSections: revealed", next.filter((s) => !already.includes(s)).join(","));
+            const changes = {};
+            if (next.length !== already.length) changes["reveal.sections"] = next;
+            // Stamped even when nothing was earned, so the NEXT call is not
+            // still treated as the first one.
+            if (firstEver) changes["reveal.firstLoadAt"] = new Date();
+
+            if (Object.keys(changes).length > 0) {
+                await Org.updateOne({ orgId }, { $set: changes });
+                if (justRevealed.length) {
+                    console.log("RevealFunctions:getSections: revealed", justRevealed.join(","));
+                }
             }
 
             return {
@@ -146,6 +168,7 @@ class RevealFunctions {
                         sections: [...ALWAYS_VISIBLE, ...next],
                         showAll: false,
                         hidden: everything.filter((section) => !next.includes(section)),
+                        justRevealed,
                         requiresApproval,
                     },
                 },
@@ -184,6 +207,7 @@ class RevealFunctions {
                         sections: [...ALWAYS_VISIBLE, ...Object.values(NavSection)],
                         showAll: true,
                         hidden: [],
+                        justRevealed: [],
                         requiresApproval: approval.required,
                     },
                 },

@@ -125,6 +125,12 @@ const orgSchema = new mongoose.Schema(
         reveal: {
             sections: { type: [String], default: [] },
             showAll: { type: Boolean, default: false },
+            // Stamped on the first read. Needed as its own field rather than
+            // inferred from `sections` being empty: a genuine first load that
+            // earns nothing also leaves sections empty, so inferring it would
+            // suppress the announcement of the very first section a workspace
+            // ever earns — the one that matters most.
+            firstLoadAt: { type: Date, default: null },
         },
         credits: {
             plan: { type: String, default: PlanId.FREE },

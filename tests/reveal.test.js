@@ -4,7 +4,7 @@
 // interesting cases are the empty one and the ratchet. Pure rule evaluation is
 // tested without a database; the ratchet and the escape hatch need one.
 "use strict";
-const { test, describe } = require("node:test");
+const { test, describe, before, after, beforeEach } = require("node:test");
 const assert = require("node:assert/strict");
 
 const revealFunctions = require("../functions/onboarding/revealFunctions");
@@ -97,5 +97,97 @@ describe("reveal rules", () => {
                 else assert.equal(seenTrue, false, `${section} un-earned itself as the workspace grew`);
             }
         }
+    });
+});
+
+/* The announce-once rule, against a real database.
+
+   Two ways this goes wrong and both are worse than no celebration at all: a
+   card that reappears on every page load, and a card that congratulates
+   someone for signing up. */
+describe("justRevealed (announce exactly once)", () => {
+    const mongoose = require("mongoose");
+    const Org = require("../models/org/org");
+    const Conversation = require("../models/conversation/conversation");
+    const { ConversationStatus } = require("../config/enums");
+
+    const URI = process.env.TEST_MONGODB_URI || "mongodb://127.0.0.1:27017/zealoop_reveal_test";
+    let connection;
+    let orgId;
+
+    before(async () => {
+        connection = await mongoose.connect(URI, { serverSelectionTimeoutMS: 3000 });
+    });
+
+    after(async () => {
+        await Promise.all([
+            Org.deleteMany({ orgId: { $regex: "^org_rev_" } }),
+            Conversation.deleteMany({ orgId: { $regex: "^org_rev_" } }),
+        ]);
+        if (connection) await mongoose.disconnect();
+    });
+
+    beforeEach(async () => {
+        orgId = `org_rev_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+        await Org.create({ orgId, name: "Rev", ownerEmail: "o@acme.com", publicKey: `pk_${orgId}`, widgetSecret: "s" });
+    });
+
+    const seedConversations = async (count, status = ConversationStatus.RESOLVED) => {
+        await Conversation.insertMany(
+            Array.from({ length: count }, (_, i) => ({
+                orgId,
+                conversationId: `cnv_${orgId}_${i}`,
+                status,
+            }))
+        );
+    };
+
+    test("a workspace's first load announces nothing", async () => {
+        // Even one that arrives busy. Signing up is not an achievement to
+        // congratulate someone for.
+        await seedConversations(120);
+        const result = await revealFunctions.getSections({ orgId });
+        assert.equal(result.status, 200);
+        assert.deepEqual(result.json.data.justRevealed, []);
+        // ...but the sections are still revealed and persisted.
+        assert.ok(result.json.data.sections.includes(NavSection.EVALUATION));
+    });
+
+    test("crossing a threshold later announces exactly once", async () => {
+        await revealFunctions.getSections({ orgId }); // first load, nothing earned
+        await seedConversations(10);
+
+        const second = await revealFunctions.getSections({ orgId });
+        assert.ok(second.json.data.justRevealed.includes(NavSection.AGENT), "should announce on the crossing call");
+
+        const third = await revealFunctions.getSections({ orgId });
+        assert.deepEqual(third.json.data.justRevealed, [], "must not announce again on the next load");
+        assert.ok(third.json.data.sections.includes(NavSection.AGENT), "but stays revealed");
+    });
+
+    test("reveal is a ratchet — losing the conversations keeps the section", async () => {
+        await revealFunctions.getSections({ orgId });
+        await seedConversations(10);
+        await revealFunctions.getSections({ orgId });
+
+        // A billing period resets, or conversations are erased on request.
+        await Conversation.deleteMany({ orgId });
+
+        const after = await revealFunctions.getSections({ orgId });
+        assert.ok(after.json.data.sections.includes(NavSection.AGENT), "a section must never vanish once earned");
+        assert.deepEqual(after.json.data.justRevealed, []);
+    });
+
+    test("show-all reveals everything and announces nothing", async () => {
+        await revealFunctions.getSections({ orgId });
+        const result = await revealFunctions.showEverything({ orgId });
+        assert.equal(result.json.data.showAll, true);
+        assert.deepEqual(result.json.data.hidden, []);
+        // The user asked for it. Celebrating their own click at them is absurd.
+        assert.deepEqual(result.json.data.justRevealed, []);
+
+        const next = await revealFunctions.getSections({ orgId });
+        assert.deepEqual(next.json.data.justRevealed, []);
+        assert.equal(next.json.data.showAll, true);
     });
 });
