@@ -4,10 +4,19 @@ const { PlanId, FeatureKey } = require("./enums");
 // pricing and packaging changes are an edit to this file rather than a hunt
 // through conditionals scattered across the codebase (§0.2).
 //
-// PRICES ARE PLACEHOLDERS. They are not a pricing decision — spec.md §12 fixes
-// the shape (tiered conversation volume, tables/actions/procedures behind the
-// paid tier) but not the numbers. Set `priceUsd` and the provider variant ids
-// before anything is charged.
+// These are the REAL prices as of 16 August 2026, and they now agree with the
+// landing page and the dashboard's plan cards. They previously did not: the
+// pages quoted $99/3,000 and $399/15,000 while this file enforced $149/2,000
+// and $499/10,000, so customers were sold one thing and cut off at another.
+//
+// Three places have to move together, and one more outside this repo: the
+// Razorpay PLAN carries the amount that is actually charged, so a change here
+// without a change there quotes a price nobody is billed.
+//
+//   backend/config/plans.js   (this file — what is enforced)
+//   web/src/app/page.tsx      (what is advertised)
+//   zealoop  Billing.tsx      (what a signed-in customer is shown)
+//   Razorpay plan_xxx         (what the card is actually charged)
 //
 // `limits` are per billing period. null means unlimited — checked explicitly
 // everywhere rather than relying on Infinity arithmetic.
@@ -58,7 +67,7 @@ const PLANS = {
     [PlanId.GROWTH]: {
         id: PlanId.GROWTH,
         name: "Growth",
-        priceUsd: 149,
+        priceUsd: 99,
         features: [
             FeatureKey.KNOWLEDGE,
             FeatureKey.TABLES,
@@ -67,21 +76,21 @@ const PLANS = {
             FeatureKey.EMAIL_CHANNEL,
             FeatureKey.REMOVE_BRANDING,
         ],
-        limits: { conversations: 2000, sources: 100, actions: 25, tables: 10, seats: 10, costUsd: 150 },
+        limits: { conversations: 5000, sources: 100, actions: 25, tables: 10, seats: 10, costUsd: 110 },
     },
 
     [PlanId.SCALE]: {
         id: PlanId.SCALE,
         name: "Scale",
-        priceUsd: 499,
+        priceUsd: 399,
         features: Object.values(FeatureKey),
         limits: {
-            conversations: 10000,
+            conversations: 50000,
             sources: UNLIMITED,
             actions: UNLIMITED,
             tables: UNLIMITED,
             seats: UNLIMITED,
-            costUsd: 600,
+            costUsd: 450,
         },
     },
 };

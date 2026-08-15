@@ -50,13 +50,28 @@ describe("plan registry", () => {
         }
     });
 
+    test("the published prices and caps are exactly these", () => {
+        /* These four numbers appear in three other places — the landing page,
+           the dashboard's plan cards, and the Razorpay plan that carries the
+           amount actually charged. They disagreed once already: the pages
+           quoted $99/3,000 while this file enforced $149/2,000, so a customer
+           was sold one thing and cut off at another. Pinned here so the next
+           edit has to be deliberate. */
+        assert.equal(PLANS[PlanId.FREE].priceUsd, 0);
+        assert.equal(PLANS[PlanId.FREE].limits.conversations, 50);
+        assert.equal(PLANS[PlanId.STARTER].priceUsd, 29);
+        assert.equal(PLANS[PlanId.STARTER].limits.conversations, 1000);
+        assert.equal(PLANS[PlanId.GROWTH].priceUsd, 99);
+        assert.equal(PLANS[PlanId.GROWTH].limits.conversations, 5000);
+        assert.equal(PLANS[PlanId.SCALE].priceUsd, 399);
+        assert.equal(PLANS[PlanId.SCALE].limits.conversations, 50000);
+    });
+
     test("STARTER is the $29 entry tier, and it is what unlocks the upgrade trigger", () => {
         // The number is asserted because it is shown in three other places —
         // the landing page, the dashboard's plan cards, and the provider's
         // variant. If it moves here and nowhere else, customers see one price
         // and get charged another.
-        assert.equal(PLANS[PlanId.STARTER].priceUsd, 29);
-        assert.equal(PLANS[PlanId.STARTER].limits.conversations, 1000);
         assert.ok(planHasFeature(PlanId.STARTER, FeatureKey.TABLES));
         assert.ok(planHasFeature(PlanId.STARTER, FeatureKey.ACTIONS));
         // Not everything, though — procedures and the email channel are what
