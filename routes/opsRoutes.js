@@ -128,6 +128,49 @@ router.post("/:orgId/security/revoke-previous-secret", reqOrgOwnerAuth, async (r
     }
 });
 
+// ── Scoped API keys (§5.6) ───────────────────────────────────────────
+
+router.get("/:orgId/api-keys", reqOrgOwnerAuth, async (req, res) => {
+    try {
+        const { status, json } = await expansionFunctions.listApiKeys({ orgId: req.params.orgId });
+        return res.status(status).json(json);
+    } catch (error) {
+        return fail(req, res, error);
+    }
+});
+
+// The response carries the plaintext key. It is the only time it exists outside
+// the caller's memory — there is deliberately no endpoint that returns it again.
+router.post("/:orgId/api-keys", reqOrgOwnerAuth, async (req, res) => {
+    try {
+        const { status, json } = await expansionFunctions.createApiKey({
+            orgId: req.params.orgId,
+            name: req.body.name,
+            scopes: req.body.scopes,
+            rateLimitPerMinute: req.body.rateLimitPerMinute,
+            actorEmail: req.auth.email,
+        });
+        return res.status(status).json(json);
+    } catch (error) {
+        return fail(req, res, error);
+    }
+});
+
+// Revoked, not deleted: the row has to survive so "which key did that" stays
+// answerable from the audit log.
+router.delete("/:orgId/api-keys/:apiKeyId", reqOrgOwnerAuth, async (req, res) => {
+    try {
+        const { status, json } = await expansionFunctions.revokeApiKey({
+            orgId: req.params.orgId,
+            apiKeyId: req.params.apiKeyId,
+            actorEmail: req.auth.email,
+        });
+        return res.status(status).json(json);
+    } catch (error) {
+        return fail(req, res, error);
+    }
+});
+
 // ── Outbound webhooks (§5.6) ─────────────────────────────────────────
 
 router.get("/:orgId/webhooks", reqOrgOwnerAuth, async (req, res) => {

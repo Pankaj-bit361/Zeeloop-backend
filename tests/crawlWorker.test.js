@@ -38,10 +38,21 @@ after(async () => {
 
 beforeEach(async () => {
     orgId = `${ORG_PREFIX}${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-    // _claim takes the oldest queued job in the whole collection, not this
-    // org's — that is correct for a worker and wrong for a test that then
-    // asserts on a specific job. Draining between tests keeps each one honest.
+
+    // The queue is global by design: _claim takes the oldest claimable job in
+    // the whole collection, because that is what a worker should do. Correct
+    // for production, awkward for a test — the suite shares one database, and
+    // another test file's fixture sitting ahead of ours in the queue is what
+    // _claim would rightly pick up first.
+    //
+    // So this file takes ownership of the queue. Own rows are deleted; foreign
+    // rows are marked COMPLETED rather than deleted, so whichever test created
+    // them can still read its own job back.
     await CrawlJob.deleteMany({ orgId: { $regex: `^${ORG_PREFIX}` } });
+    await CrawlJob.updateMany(
+        { orgId: { $not: { $regex: `^${ORG_PREFIX}` } }, status: { $in: [RunStatus.QUEUED, RunStatus.RUNNING] } },
+        { $set: { status: RunStatus.COMPLETED, finishedAt: new Date(), leaseExpiresAt: null } }
+    );
 });
 
 async function makeSource() {
