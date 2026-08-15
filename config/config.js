@@ -96,6 +96,24 @@ module.exports = {
     // OpenRouter is OpenAI-compatible, so these can be any slug it serves
     SMALL_MODEL: process.env.SMALL_MODEL || "anthropic/claude-haiku-4.5",
     LARGE_MODEL: process.env.LARGE_MODEL || "anthropic/claude-sonnet-5",
+
+    /* The model that writes the customer-facing answer, and the single biggest
+       line in the bill: it runs on every turn of every conversation, while
+       LARGE_MODEL's other callers — copilot, evals, simulations, the
+       onboarding wizard — run rarely and are quality-sensitive.
+
+       Haiku rather than Sonnet because this is grounded RAG: the retrieved
+       chunks are in the prompt and the job is to answer FROM them, not to
+       reason from scratch. Sonnet's advantage is smallest exactly here, and
+       the price difference is 3x on input and output both ($1/$5 against
+       $3/$15 per Mtok). That takes a conversation from roughly 7 cents to
+       under 3, which is the difference between the paid tiers making money and
+       losing it.
+
+       Set ANSWER_MODEL=anthropic/claude-sonnet-5 to put it back — the answer
+       quality is worth measuring on your own traces before deciding, and
+       Evaluation exists for exactly that. */
+    ANSWER_MODEL: process.env.ANSWER_MODEL || "anthropic/claude-haiku-4.5",
     // Retried once when the primary model 5xxes or the request fails outright
     // (§8.3). Chat only — see the note on LlmFunctions.complete for why
     // embeddings must never fall back.

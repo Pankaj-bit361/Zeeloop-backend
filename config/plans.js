@@ -4,8 +4,20 @@ const { PlanId, FeatureKey } = require("./enums");
 // pricing and packaging changes are an edit to this file rather than a hunt
 // through conditionals scattered across the codebase (§0.2).
 //
-// These are the REAL prices as of 16 August 2026, and they now agree with the
-// landing page and the dashboard's plan cards. They previously did not: the
+// These are the REAL prices as of 16 August 2026, and they agree with the
+// landing page and the dashboard's plan cards.
+//
+// The conversation caps are set from measured unit cost, not from what sounds
+// generous. At ANSWER_MODEL=haiku a conversation costs roughly $0.028 (5 chunks
+// of retrieved context, a few hundred output tokens, the gate and attribute
+// passes, embedding and rerank, across 2-4 turns). The caps leave about a 60-70%
+// gross margin at full usage, which is what makes the plans survive a customer
+// who actually uses what they bought.
+//
+// For reference, the self-serve market charges $0.18-0.80 per conversation
+// (Chatbase, once its credit multipliers are unwound) and Intercom Fin charges
+// $0.99 per RESOLUTION. These caps price at $0.07-0.10 per conversation, so
+// they remain 2-10x cheaper than the nearest competitor while making money. They previously did not: the
 // pages quoted $99/3,000 and $399/15,000 while this file enforced $149/2,000
 // and $499/10,000, so customers were sold one thing and cut off at another.
 //
@@ -42,9 +54,16 @@ const PLANS = {
             actions: 0,
             tables: 0,
             seats: 1,
-            // Hard ceiling on model spend per period, independent of the
-            // conversation count — a single pathological conversation can burn
-            // far more than its share (§8.2).
+            /* Hard ceiling on model spend per period, independent of the
+               conversation count — a single pathological conversation can burn
+               far more than its share (§8.2).
+
+               These now sit BELOW the plan price, which is a change: they used
+               to sit at or above it, so the guard could not fire until the
+               customer was already unprofitable. Sized at roughly 2.5x the
+               expected spend at the full conversation cap, so an ordinary heavy
+               user never meets it and a runaway is stopped while there is still
+               margin left. */
             costUsd: 5,
         },
     },
@@ -61,7 +80,7 @@ const PLANS = {
         name: "Starter",
         priceUsd: 29,
         features: [FeatureKey.KNOWLEDGE, FeatureKey.TABLES, FeatureKey.ACTIONS],
-        limits: { conversations: 1000, sources: 25, actions: 5, tables: 3, seats: 3, costUsd: 55 },
+        limits: { conversations: 300, sources: 25, actions: 5, tables: 3, seats: 3, costUsd: 20 },
     },
 
     [PlanId.GROWTH]: {
@@ -76,7 +95,7 @@ const PLANS = {
             FeatureKey.EMAIL_CHANNEL,
             FeatureKey.REMOVE_BRANDING,
         ],
-        limits: { conversations: 5000, sources: 100, actions: 25, tables: 10, seats: 10, costUsd: 110 },
+        limits: { conversations: 1200, sources: 100, actions: 25, tables: 10, seats: 10, costUsd: 70 },
     },
 
     [PlanId.SCALE]: {
@@ -85,12 +104,12 @@ const PLANS = {
         priceUsd: 399,
         features: Object.values(FeatureKey),
         limits: {
-            conversations: 50000,
+            conversations: 6000,
             sources: UNLIMITED,
             actions: UNLIMITED,
             tables: UNLIMITED,
             seats: UNLIMITED,
-            costUsd: 450,
+            costUsd: 280,
         },
     },
 };

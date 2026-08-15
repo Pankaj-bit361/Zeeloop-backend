@@ -40,7 +40,7 @@ class AgentFunctions {
             topChunks: [],
             belowThreshold: false,
             procedureId: null,
-            model: config.LARGE_MODEL,
+            model: config.ANSWER_MODEL,
             inputTokens: 0,
             outputTokens: 0,
             iterations: 0,
@@ -582,7 +582,7 @@ class AgentFunctions {
         for (let iteration = 0; iteration < config.MAX_TOOL_ITERATIONS; iteration++) {
             trace.iterations = iteration + 1;
             const result = await llmFunctions.completeJson({
-                model: config.LARGE_MODEL,
+                model: config.ANSWER_MODEL,
                 system,
                 schemaHint: `{"type": "answer", "text": string, "citationChunkIds": string[]} OR {"type": "clarify", "text": string} OR {"type": "tool_call", "actionId": string, "args": object}`,
                 messages,
@@ -591,7 +591,7 @@ class AgentFunctions {
                 // them, so the instruction and the ceiling move together.
                 maxTokens: maxTokens || config.MAX_OUTPUT_TOKENS,
             });
-            this._addUsage(trace, config.LARGE_MODEL, result);
+            this._addUsage(trace, config.ANSWER_MODEL, result);
             const output = result.json;
 
             if (output.type === "clarify") {

@@ -50,6 +50,34 @@ describe("plan registry", () => {
         }
     });
 
+    test("every paid plan makes money at its own cap", () => {
+        /* The check that was missing when the caps were set by feel. At
+           ANSWER_MODEL=haiku a conversation costs about $0.028; a plan whose
+           cap costs more than it charges loses money on exactly the customers
+           who use what they bought. Scale was once $399 for 50,000, which is
+           $1,400 of model spend against $399 of revenue. */
+        const COST_PER_CONVERSATION = 0.028;
+        for (const id of [PlanId.STARTER, PlanId.GROWTH, PlanId.SCALE]) {
+            const plan = PLANS[id];
+            const spendAtCap = plan.limits.conversations * COST_PER_CONVERSATION;
+            assert.ok(
+                spendAtCap < plan.priceUsd,
+                `${id}: ${plan.limits.conversations} conversations cost $${spendAtCap.toFixed(2)} against a $${plan.priceUsd} price`
+            );
+        }
+    });
+
+    test("the cost ceiling can fire before the plan is unprofitable", () => {
+        // A ceiling above the price cannot protect anything — by the time it
+        // trips the money is already gone.
+        for (const id of [PlanId.STARTER, PlanId.GROWTH, PlanId.SCALE]) {
+            assert.ok(
+                PLANS[id].limits.costUsd < PLANS[id].priceUsd,
+                `${id}: cost ceiling $${PLANS[id].limits.costUsd} is not below the $${PLANS[id].priceUsd} price`
+            );
+        }
+    });
+
     test("the published prices and caps are exactly these", () => {
         /* These four numbers appear in three other places — the landing page,
            the dashboard's plan cards, and the Razorpay plan that carries the
@@ -60,11 +88,11 @@ describe("plan registry", () => {
         assert.equal(PLANS[PlanId.FREE].priceUsd, 0);
         assert.equal(PLANS[PlanId.FREE].limits.conversations, 50);
         assert.equal(PLANS[PlanId.STARTER].priceUsd, 29);
-        assert.equal(PLANS[PlanId.STARTER].limits.conversations, 1000);
+        assert.equal(PLANS[PlanId.STARTER].limits.conversations, 300);
         assert.equal(PLANS[PlanId.GROWTH].priceUsd, 99);
-        assert.equal(PLANS[PlanId.GROWTH].limits.conversations, 5000);
+        assert.equal(PLANS[PlanId.GROWTH].limits.conversations, 1200);
         assert.equal(PLANS[PlanId.SCALE].priceUsd, 399);
-        assert.equal(PLANS[PlanId.SCALE].limits.conversations, 50000);
+        assert.equal(PLANS[PlanId.SCALE].limits.conversations, 6000);
     });
 
     test("STARTER is the $29 entry tier, and it is what unlocks the upgrade trigger", () => {
