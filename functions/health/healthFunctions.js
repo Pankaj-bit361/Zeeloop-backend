@@ -1,6 +1,7 @@
 const mongoose = require("mongoose");
 const config = require("../../config/config");
 const generalFunctions = require("../utilFunctions/generalFunctions");
+const llmFunctions = require("../utilFunctions/llmFunctions");
 
 // Deep health (§8.3). Deliberately NOT what the load balancer checks: / and
 // /health stay liveness-only, because a health check that queries Mongo turns a
@@ -153,38 +154,39 @@ class HealthFunctions {
         }
     }
 
-    // Checked separately from chat because they fail independently — as they
-    // are doing right now, with completions healthy and embeddings 403.
+    // Checked separately from chat because they fail independently — which is
+    // not hypothetical: on 15 August 2026 completions were healthy while
+    // embeddings returned 403 from a billing block on the Google project behind
+    // OpenRouter's BYOK routing.
+    //
+    // Goes through llmFunctions.embed rather than issuing its own HTTP call, so
+    // it exercises the transport the pipeline actually uses — including the
+    // Google-direct preference and the OpenRouter fallback. A health check that
+    // tests a different code path than production is worth very little.
     async _checkEmbeddingProvider() {
-        if (!config.OPENROUTER_API_KEY) {
-            return { status: Status.FAILING, detail: "OPENROUTER_API_KEY is not set" };
+        if (!config.OPENROUTER_API_KEY && !config.GEMINI_API_KEY) {
+            return { status: Status.FAILING, detail: "no embedding credentials set" };
         }
         try {
-            const response = await fetch(`${config.OPENROUTER_BASE_URL}/embeddings`, {
-                method: "POST",
-                headers: {
-                    Authorization: `Bearer ${config.OPENROUTER_API_KEY}`,
-                    "content-type": "application/json",
-                },
-                body: JSON.stringify({
-                    model: config.EMBED_MODEL,
-                    input: "health",
-                    dimensions: config.EMBEDDING_DIM,
-                }),
-            });
-            if (!response.ok) {
-                const body = await response.text().catch(() => "");
+            const vectors = await llmFunctions.embed({ texts: ["health"] });
+            if (!vectors[0] || vectors[0].length !== config.EMBEDDING_DIM) {
                 return {
                     status: Status.FAILING,
-                    detail: `${config.EMBED_MODEL} returned ${response.status}`,
-                    // Truncated: the upstream body can be large, and this is
-                    // rendered in a monitor.
-                    upstream: body.slice(0, 200),
+                    detail: `returned ${vectors[0] ? vectors[0].length : 0}-dim vectors, expected ${config.EMBEDDING_DIM}`,
                 };
             }
-            return { status: Status.OK, model: config.EMBED_MODEL };
+            return {
+                status: Status.OK,
+                transport: config.GEMINI_API_KEY ? "google-direct" : "openrouter",
+                dims: vectors[0].length,
+            };
         } catch (error) {
-            return { status: Status.FAILING, detail: error.message };
+            return {
+                status: Status.FAILING,
+                // Truncated: upstream bodies can be large and this renders in a
+                // monitor.
+                detail: String(error.message).slice(0, 220),
+            };
         }
     }
 }

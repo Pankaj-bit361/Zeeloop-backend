@@ -60,6 +60,19 @@ module.exports = {
     // Must produce vectors matching EMBEDDING_DIM. Gemini Embedding 2 has
     // flexible output dims (128–3072); we request EMBEDDING_DIM explicitly.
     EMBED_MODEL: process.env.EMBED_MODEL || "google/gemini-embedding-2",
+
+    // Direct Google embeddings. When set, embeddings go straight to Google
+    // instead of through OpenRouter — same model, so the vectors land in the
+    // same space and nothing needs re-embedding. This exists because routing
+    // Gemini through OpenRouter's BYOK path depends on a Google Cloud project
+    // whose billing can block the whole pipeline, which is exactly what
+    // happened on 15 August 2026.
+    GEMINI_API_KEY: process.env.GEMINI_API_KEY || "",
+    GEMINI_BASE_URL: process.env.GEMINI_BASE_URL || "https://generativelanguage.googleapis.com/v1beta",
+    // The bare model id, without the OpenRouter "google/" vendor prefix.
+    GEMINI_EMBED_MODEL: process.env.GEMINI_EMBED_MODEL || "gemini-embedding-2",
+    // batchEmbedContents caps how many inputs one request may carry.
+    GEMINI_EMBED_BATCH_SIZE: Number(process.env.GEMINI_EMBED_BATCH_SIZE || 100),
     // Optional. No key → rerank throws → pipeline degrades to fusion order.
     VOYAGE_API_KEY: process.env.VOYAGE_API_KEY || "",
     RERANK_MODEL: "rerank-2.5",

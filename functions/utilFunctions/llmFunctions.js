@@ -114,9 +114,90 @@ class LlmFunctions {
         throw new LlmError("openrouter", `completeJson: model returned invalid JSON twice: ${lastError.message}`, 502);
     }
 
-    async embed({ texts }) {
+    // Two transports, ONE model. Google direct is preferred when a key is set;
+    // OpenRouter is the fallback. Falling back is safe here in a way a model
+    // fallback never is — both routes call gemini-embedding-2, so the vectors
+    // land in the same space as every chunk already stored. Changing the model
+    // would not be safe, which is why there is still no model fallback.
+    async embed({ texts, fetchImpl = fetch }) {
         console.log("LlmFunctions:embed: count:", texts.length);
-        const response = await fetch(`${config.OPENROUTER_BASE_URL}/embeddings`, {
+
+        if (config.GEMINI_API_KEY) {
+            try {
+                return await this._embedGoogle({ texts, fetchImpl });
+            } catch (error) {
+                // A wrong dimension is a configuration error, not a transport
+                // failure. Retrying it on OpenRouter would replace the real
+                // cause with whatever OpenRouter happens to say, which is how a
+                // five-minute fix becomes an afternoon.
+                if (error.fatal) throw error;
+                console.error("LlmFunctions:embed: Google direct failed, falling back to OpenRouter:", error.message);
+            }
+        }
+
+        return await this._embedOpenRouter({ texts, fetchImpl });
+    }
+
+    // Google caps how many inputs one batchEmbedContents call may carry, so
+    // long ingests are split. Batches run sequentially: a source with a
+    // thousand chunks should not open ten concurrent connections to the
+    // embedding API and get itself rate limited.
+    async _embedGoogle({ texts, fetchImpl = fetch }) {
+        const model = config.GEMINI_EMBED_MODEL;
+        const size = Math.max(1, config.GEMINI_EMBED_BATCH_SIZE);
+        const embeddings = [];
+
+        for (let start = 0; start < texts.length; start += size) {
+            const batch = texts.slice(start, start + size);
+            const response = await fetchImpl(
+                `${config.GEMINI_BASE_URL}/models/${model}:batchEmbedContents?key=${config.GEMINI_API_KEY}`,
+                {
+                    method: "POST",
+                    headers: { "content-type": "application/json" },
+                    body: JSON.stringify({
+                        requests: batch.map((text) => ({
+                            model: `models/${model}`,
+                            content: { parts: [{ text }]},
+                            outputDimensionality: config.EMBEDDING_DIM,
+                        })),
+                    }),
+                }
+            );
+
+            if (!response.ok) {
+                const body = await response.text();
+                throw new LlmError("google", `embed failed: ${body}`, response.status);
+            }
+
+            const data = await response.json();
+            if (!data.embeddings || data.embeddings.length !== batch.length) {
+                throw new LlmError(
+                    "google",
+                    `embed failed: asked for ${batch.length} vectors, got ${(data.embeddings || []).length}`,
+                    502
+                );
+            }
+            // batchEmbedContents preserves request order, so a positional push
+            // keeps chunk N aligned with vector N.
+            embeddings.push(...data.embeddings.map((item) => item.values));
+        }
+
+        if (embeddings[0] && embeddings[0].length !== config.EMBEDDING_DIM) {
+            const error = new LlmError(
+                "google",
+                `embed failed: ${model} returned ${embeddings[0].length}-dim vectors, expected ${config.EMBEDDING_DIM}. Model and Atlas index dimensions must match.`,
+                502
+            );
+            // Not worth retrying on another transport — the same misconfigured
+            // dimension would come back.
+            error.fatal = true;
+            throw error;
+        }
+        return embeddings;
+    }
+
+    async _embedOpenRouter({ texts, fetchImpl = fetch }) {
+        const response = await fetchImpl(`${config.OPENROUTER_BASE_URL}/embeddings`, {
             method: "POST",
             headers: {
                 Authorization: `Bearer ${config.OPENROUTER_API_KEY}`,
