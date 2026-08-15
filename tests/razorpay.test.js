@@ -186,6 +186,68 @@ describe("status mapping", () => {
     });
 });
 
+describe("in-page checkout config", () => {
+    /* `embed` is handed to the browser so Checkout.js can open the payment
+       sheet without redirecting to the hosted summary page. Everything in it is
+       public by design — but it is assembled next to RAZORPAY_KEY_SECRET, and
+       one wrong property name there hands an attacker the ability to create
+       subscriptions, issue refunds and read every customer on the account. */
+    const stubFetch = (body) => {
+        const original = global.fetch;
+        global.fetch = async () => ({ ok: true, json: async () => body, text: async () => "" });
+        return () => {
+            global.fetch = original;
+        };
+    };
+
+    const checkout = () =>
+        razorpay.createCheckout({
+            orgId: "org_1",
+            planId: PlanId.STARTER,
+            variantId: "plan_XYZ",
+            email: "a@b.test",
+        });
+
+    test("carries the subscription id and the PUBLIC key, and nothing else", async () => {
+        const restore = stubFetch({ id: "sub_9", short_url: "https://rzp.io/i/abc" });
+        try {
+            const result = await checkout();
+            assert.equal(result.embed.subscriptionId, "sub_9");
+            assert.equal(result.embed.publicKey, "rzp_test_key");
+            assert.deepEqual(Object.keys(result.embed).sort(), ["provider", "publicKey", "subscriptionId"]);
+        } finally {
+            restore();
+        }
+    });
+
+    test("the API key secret appears nowhere in what the browser receives", async () => {
+        const restore = stubFetch({ id: "sub_9", short_url: "https://rzp.io/i/abc" });
+        try {
+            const result = await checkout();
+            // Serialised, because a secret nested at any depth is still a
+            // secret and a key-by-key check would miss it.
+            const wire = JSON.stringify({ url: result.url, embed: result.embed });
+            assert.equal(wire.includes(config.RAZORPAY_KEY_SECRET), false, "the key secret is being sent to the client");
+        } finally {
+            restore();
+        }
+    });
+
+    test("no subscription id means no embed, so the client redirects instead", async () => {
+        // A sheet cannot be opened without an id. Returning a half-built embed
+        // would fail in the browser rather than here.
+        const restore = stubFetch({ short_url: "https://rzp.io/i/abc" });
+        try {
+            const result = await checkout();
+            assert.equal(result.success, true);
+            assert.equal(result.url, "https://rzp.io/i/abc");
+            assert.equal(result.embed, null);
+        } finally {
+            restore();
+        }
+    });
+});
+
 describe("configuration", () => {
     test("isConfigured needs both key id and secret", () => {
         assert.equal(razorpay.isConfigured(), true);

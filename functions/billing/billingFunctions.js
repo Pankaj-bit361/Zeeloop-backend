@@ -112,7 +112,12 @@ class BillingFunctions {
                 return { status: 502, json: { success: false, error: result.error } };
             }
 
-            return { status: 200, json: { success: true, data: { url: result.url } } };
+            /* `url` is always present and is the fallback every client can
+               take. `embed` is set only by providers that can open a payment
+               sheet in the page, and is null otherwise — a client that ignores
+               it still works, and a provider that cannot do it needs no
+               special case here. */
+            return { status: 200, json: { success: true, data: { url: result.url, embed: result.embed || null } } };
         } catch (error) {
             console.error("BillingFunctions:createCheckout: Catch block");
             console.error(error);

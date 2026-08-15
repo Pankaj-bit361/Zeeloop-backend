@@ -202,7 +202,32 @@ class RazorpayProvider {
             // rather than returning success with nowhere to send anyone.
             return { success: false, error: "Razorpay returned no checkout url" };
         }
-        return { success: true, url, providerSubscriptionId: json.id ? String(json.id) : null };
+
+        /* `embed` is what lets the dashboard open the payment sheet in-page
+           instead of redirecting to short_url.
+
+           short_url is not the payment page — it is a hosted summary card with
+           a "Start Subscription" button that opens the payment sheet. So the
+           redirect costs the customer an extra click, a full page navigation
+           off our origin, and a page that carries the Razorpay account's
+           business name rather than ours.
+
+           Checkout.js takes this subscription id and opens the same sheet
+           directly. Nothing about the subscription differs — it is the one
+           created above, notes and all — so the webhook path is identical
+           either way.
+
+           publicKey is the rzp_live_/rzp_test_ KEY ID, which is designed to sit
+           in a browser; it identifies the account and cannot authorise
+           anything. RAZORPAY_KEY_SECRET must never appear in this object. */
+        return {
+            success: true,
+            url,
+            providerSubscriptionId: json.id ? String(json.id) : null,
+            embed: json.id
+                ? { provider: this.id, subscriptionId: String(json.id), publicKey: config.RAZORPAY_KEY_ID }
+                : null,
+        };
     }
 
     async cancelSubscription({ providerSubscriptionId }) {
