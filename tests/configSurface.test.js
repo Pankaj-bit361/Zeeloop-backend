@@ -5,6 +5,12 @@
 //   1. A DRAFT object never reaches production traffic.
 //   2. Editing a LIVE object drops it back to DRAFT, so "Save" cannot silently
 //      ship to customers.
+//
+// Both of those describe a workspace with a team. Since §1.9 the draft model
+// only switches on when there is a second person to review a change, so most
+// of these tests call `asTeam()` first — the properties above are exactly what
+// approval is FOR, and testing them on a solo workspace would be testing a
+// mode that deliberately does not have them. The solo path has its own tests.
 "use strict";
 const { test, describe, before, after, beforeEach } = require("node:test");
 const assert = require("node:assert/strict");
@@ -20,6 +26,7 @@ const Attribute = require("../models/config/attribute");
 const Segment = require("../models/config/segment");
 const ConfigVersion = require("../models/config/configVersion");
 const AuditLog = require("../models/org/auditLog");
+const Member = require("../models/org/member");
 const {
     ConfigObjectType,
     GuidanceCategory,
@@ -46,6 +53,7 @@ after(async () => {
         Segment.deleteMany({ orgId: { $regex: "^org_cfg_" } }),
         ConfigVersion.deleteMany({ orgId: { $regex: "^org_cfg_" } }),
         AuditLog.deleteMany({ orgId: { $regex: "^org_cfg_" } }),
+        Member.deleteMany({ orgId: { $regex: "^org_cfg_" } }),
     ]);
     if (connection) await mongoose.disconnect();
 });
@@ -62,6 +70,16 @@ const newRule = (overrides) => ({
     ...overrides,
 });
 
+/* Gives the current org a second seat, which is the signal that turns the
+   draft/publish model on. Two rows rather than one: the rule is `members > 1`,
+   and seeding a single member would leave it solo. */
+async function asTeam() {
+    await Member.create([
+        { orgId, memberId: `mem_${Date.now()}_a`, email: "owner@acme.com", accountId: "acc_a" },
+        { orgId, memberId: `mem_${Date.now()}_b`, email: "second@acme.com", accountId: "acc_b" },
+    ]);
+}
+
 async function createRule(overrides) {
     const result = await configFunctions.create({
         orgId,
@@ -74,15 +92,31 @@ async function createRule(overrides) {
 }
 
 describe("draft / live separation (§2.4)", () => {
-    test("a new object is always a DRAFT and disabled", async () => {
+    test("with a team, a new object is a DRAFT and disabled", async () => {
         // A rule that took effect the moment it was typed would mean there is
-        // no way to write one without shipping it.
+        // no way to write one without shipping it — which is what a colleague
+        // reviewing the change needs.
+        await asTeam();
         const rule = await createRule();
         assert.equal(rule.publishState, PublishState.DRAFT);
         assert.equal(rule.enabled, false);
     });
 
+    test("alone, a new object goes live and works immediately (§1.9)", async () => {
+        // There is nobody to review it. A draft that does nothing until you
+        // find the Publish button is the single most common way a solo founder
+        // concludes the product is broken.
+        const rule = await createRule({ body: "SOLO RULE SHIPS AT ONCE" });
+        assert.equal(rule.publishState, PublishState.LIVE);
+        // LIVE but disabled would move the trap rather than remove it.
+        assert.equal(rule.enabled, true);
+
+        const loaded = await guidanceFunctions.loadForTurn({ orgId, context: {} });
+        assert.match(loaded.guidancePrompt, /SOLO RULE SHIPS AT ONCE/);
+    });
+
     test("a draft never reaches the prompt", async () => {
+        await asTeam();
         await createRule({ body: "DRAFT RULE MUST NOT SHIP" });
         const loaded = await guidanceFunctions.loadForTurn({ orgId, context: {} });
         assert.doesNotMatch(loaded.guidancePrompt || "", /DRAFT RULE MUST NOT SHIP/);
@@ -104,7 +138,9 @@ describe("draft / live separation (§2.4)", () => {
 
     test("editing a live object un-publishes it, and says so", async () => {
         // Otherwise "Save" silently ships to customers, which is the exact
-        // thing draft/live exists to stop.
+        // thing draft/live exists to stop. Needs a team: on a solo workspace
+        // there is no reviewer, so an edit stays live by design.
+        await asTeam();
         const rule = await createRule();
         await configFunctions.publish({ orgId, objectType: ConfigObjectType.GUIDANCE_RULE, objectId: rule.guidanceRuleId });
 
@@ -282,6 +318,10 @@ describe("write-time validation", () => {
     test("stats and publishState are not client-writable", async () => {
         // A client that could write these could fake its own attribution
         // numbers and publish without publishing.
+        // On a team workspace the server's answer is DRAFT, so a client-sent
+        // LIVE being ignored is visible. On a solo one both are LIVE and the
+        // assertion would pass without proving anything.
+        await asTeam();
         const rule = await configFunctions.create({
             orgId,
             objectType: ConfigObjectType.GUIDANCE_RULE,

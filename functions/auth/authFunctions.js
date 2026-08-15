@@ -5,7 +5,8 @@ const Account = require("../../models/user/account");
 const AuthToken = require("../../models/user/authToken");
 const Member = require("../../models/org/member");
 const Org = require("../../models/org/org");
-const { AuthProvider, TokenPurpose, MemberRole, MemberStatus, IdPrefix } = require("../../config/enums");
+const { AuthProvider, TokenPurpose, MemberRole, MemberStatus, IdPrefix, PlanId } = require("../../config/enums");
+const { getPlan } = require("../../config/plans");
 const generalFunctions = require("../utilFunctions/generalFunctions");
 const sessionFunctions = require("../utilFunctions/sessionFunctions");
 const attributeFunctions = require("../config/attributeFunctions");
@@ -285,7 +286,7 @@ class AuthFunctions {
                 widgetSecret: generalFunctions.encrypt(widgetSecret),
                 agent: { name: "Zea", greeting: `Hi! Ask me anything about ${orgName}.`, language: "en" },
                 widget: { position: "bottom-right", allowedOrigins: [] },
-                credits: { plan: "FREE", conversationsUsed: 0, conversationsLimit: 500 },
+                credits: { plan: PlanId.FREE, conversationsUsed: 0, conversationsLimit: getPlan(PlanId.FREE).limits.conversations },
             });
 
             await Member.create({

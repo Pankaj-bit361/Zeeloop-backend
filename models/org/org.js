@@ -4,7 +4,9 @@ const {
     AnswerLength,
     LanguagePolicy,
     HeaderTextMode,
+    PlanId,
 } = require("../../config/enums");
+const { getPlan } = require("../../config/plans");
 
 const orgSchema = new mongoose.Schema(
     {
@@ -110,10 +112,30 @@ const orgSchema = new mongoose.Schema(
             dismissed: { type: Boolean, default: false },
             wizardCompletedAt: { type: Date, default: null },
         },
+        // §1.9 — progressive reveal. Which sections this workspace has earned.
+        //
+        // Stored rather than derived on every read, because reveal must be a
+        // ratchet: a section that appeared at 20 conversations must not vanish
+        // when the billing period resets the count. Something disappearing from
+        // the sidebar is far more alarming than it never having been there.
+        //
+        // `showAll` is the escape hatch, and it is not optional. Hiding things
+        // from someone who wants to see them is the other way to lose trust, so
+        // one switch in settings reveals everything permanently.
+        reveal: {
+            sections: { type: [String], default: [] },
+            showAll: { type: Boolean, default: false },
+        },
         credits: {
-            plan: { type: String, default: "FREE" },
+            plan: { type: String, default: PlanId.FREE },
             conversationsUsed: { type: Number, default: 0 },
-            conversationsLimit: { type: Number, default: 500 },
+            // Read from the plan registry rather than written down again here.
+            // This field is what the dashboard displays; `plan.limits` is what
+            // usageFunctions actually enforces. When they were two separate
+            // numbers a Free workspace was shown 500 and cut off at the
+            // registry's figure, which is a support ticket disguised as a
+            // default value.
+            conversationsLimit: { type: Number, default: () => getPlan(PlanId.FREE).limits.conversations },
         },
     },
     {

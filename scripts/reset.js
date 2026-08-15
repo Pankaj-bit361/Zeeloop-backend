@@ -10,7 +10,8 @@
 const mongoose = require("mongoose");
 const crypto = require("crypto");
 const config = require("../config/config");
-const { MemberRole, MemberStatus, AuthProvider, IdPrefix } = require("../config/enums");
+const { MemberRole, MemberStatus, AuthProvider, IdPrefix, PlanId } = require("../config/enums");
+const { getPlan } = require("../config/plans");
 const generalFunctions = require("../functions/utilFunctions/generalFunctions");
 const sessionFunctions = require("../functions/utilFunctions/sessionFunctions");
 
@@ -68,7 +69,7 @@ async function reset() {
         widgetSecret: generalFunctions.encrypt(widgetSecret),
         agent: { name: "Zea", greeting: `Hi! Ask me anything about ${orgName}.`, language: "en" },
         widget: { position: "bottom-right", allowedOrigins: [] },
-        credits: { plan: "FREE", conversationsUsed: 0, conversationsLimit: 500 },
+        credits: { plan: PlanId.FREE, conversationsUsed: 0, conversationsLimit: getPlan(PlanId.FREE).limits.conversations },
     });
 
     // An org with no owner seat is a workspace nobody can open: /api/auth/me
@@ -110,9 +111,15 @@ async function reset() {
     await mongoose.disconnect();
 }
 
-reset().catch(async (error) => {
-    console.log("reset: failed");
-    console.error(error);
-    await mongoose.disconnect();
-    process.exit(1);
-});
+// Only when run directly — see the note in seed.js. This script is more
+// destructive than that one, so the guard matters more here, not less.
+if (require.main === module) {
+    reset().catch(async (error) => {
+        console.log("reset: failed");
+        console.error(error);
+        await mongoose.disconnect();
+        process.exit(1);
+    });
+}
+
+module.exports = { reset };

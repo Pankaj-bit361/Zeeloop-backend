@@ -1,5 +1,6 @@
 const express = require("express");
 const wizardFunctions = require("../functions/onboarding/wizardFunctions");
+const revealFunctions = require("../functions/onboarding/revealFunctions");
 const brandfetchFunctions = require("../functions/onboarding/brandfetchFunctions");
 const knowledgeFunctions = require("../functions/knowledge/knowledgeFunctions");
 const crawlWorker = require("../functions/knowledge/crawlWorker");
@@ -205,6 +206,29 @@ router.patch("/:orgId/knowledge/sources/:sourceId/schedule", reqOrgOwnerAuth, as
             sourceId: req.params.sourceId,
             syncSchedule: req.body.syncSchedule,
         });
+        return res.status(status).json(json);
+    } catch (error) {
+        return fail(req, res, error);
+    }
+});
+
+// ── Progressive reveal (§1.9) ────────────────────────────────────────
+//
+// Presentation only. Nothing here gates access — every route these sections
+// point at still answers whether or not the section is in the sidebar.
+
+router.get("/:orgId/sections", reqOrgOwnerAuth, async (req, res) => {
+    try {
+        const { status, json } = await revealFunctions.getSections({ orgId: req.params.orgId });
+        return res.status(status).json(json);
+    } catch (error) {
+        return fail(req, res, error);
+    }
+});
+
+router.post("/:orgId/sections/show-all", reqOrgOwnerAuth, async (req, res) => {
+    try {
+        const { status, json } = await revealFunctions.showEverything({ orgId: req.params.orgId });
         return res.status(status).json(json);
     } catch (error) {
         return fail(req, res, error);

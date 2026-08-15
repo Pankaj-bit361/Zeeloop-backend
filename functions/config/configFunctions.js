@@ -1,6 +1,7 @@
 const { PublishState, ConfigObjectType, AuditAction, IdPrefix } = require("../../config/enums");
 const ConfigVersion = require("../../models/config/configVersion");
 const generalFunctions = require("../utilFunctions/generalFunctions");
+const revealFunctions = require("../onboarding/revealFunctions");
 const auditFunctions = require("../audit/auditFunctions");
 const { getEntry, isProtected } = require("./configRegistry");
 
@@ -61,8 +62,18 @@ class ConfigFunctions {
         }
     }
 
-    // Always created as a DRAFT. A new rule that took effect the moment it was
-    // typed would mean there is no way to write one without shipping it.
+    /* Created as a DRAFT when there is a team, LIVE when there is not.
+       §1.9.
+
+       The draft model exists so a rule can be written without shipping it —
+       which is exactly right when a colleague might review it, and pure
+       obstruction when nobody will. A solo founder writes a rule, watches it do
+       nothing, and concludes the product is broken; they are not protecting a
+       draft from anyone, because there is no one else.
+
+       So approval switches on with the second seat. Everything else about the
+       model is unchanged, including version history: the objects are identical,
+       only the state they start in differs. */
     async create({ orgId, objectType, body, actorEmail }) {
         console.log("ConfigFunctions:create: orgId:", orgId, "type:", objectType);
         try {
@@ -72,18 +83,38 @@ class ConfigFunctions {
             const validation = entry.validate({ body: body || {} });
             if (!validation.success) return { status: 400, json: { success: false, error: validation.error } };
 
+            const approval = await revealFunctions.requiresApproval({ orgId });
+
             const objectId = generalFunctions.generateId(entry.idPrefix);
             const document = await entry.Model.create({
                 orgId,
                 [entry.idField]: objectId,
                 ...this._pick(body, entry.fields),
                 ...this._pickShared(body),
-                publishState: PublishState.DRAFT,
+                publishState: approval.required ? PublishState.DRAFT : PublishState.LIVE,
+                /* `enabled` defaults to false, which on a solo workspace would
+                   move the trap rather than remove it: the rule is LIVE, still
+                   does nothing, and now the missing step is an On switch
+                   instead of a Publish button. Solo rules arrive working.
+
+                   With a team it stays false, because a rule that switched
+                   itself on the moment a colleague published it would be the
+                   opposite surprise. */
+                enabled: approval.required ? false : true,
                 version: 1,
                 updatedBy: actorEmail || null,
             });
 
-            return { status: 201, json: { success: true, data: this._strip(document.toJSON()) } };
+            return {
+                status: 201,
+                json: {
+                    success: true,
+                    data: this._strip(document.toJSON()),
+                    // Told rather than inferred, so the dashboard does not have
+                    // to guess why there is no Publish button.
+                    requiresApproval: approval.required,
+                },
+            };
         } catch (error) {
             console.error("ConfigFunctions:create: Catch block");
             console.error(error);
@@ -113,8 +144,11 @@ class ConfigFunctions {
             existing.version += 1;
             existing.updatedBy = actorEmail || null;
             // See the header note: an edit to a live object un-publishes it.
+            // Same rule on edit: dropping a live object to draft is a review
+            // step, and there is no review without a reviewer.
+            const approval = await revealFunctions.requiresApproval({ orgId });
             const wasLive = existing.publishState === PublishState.LIVE;
-            if (wasLive) existing.publishState = PublishState.DRAFT;
+            if (wasLive && approval.required) existing.publishState = PublishState.DRAFT;
             await existing.save();
 
             return {

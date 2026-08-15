@@ -139,6 +139,22 @@ const OnboardingStep = {
 
 // Billing plans. The id is what is stored on Subscription and what the plan
 // registry in config/plans.js is keyed by, so renaming one is a migration.
+// Sections of the dashboard that reveal themselves as a workspace grows (§1.9).
+// The product's whole pitch is Fin's capability without Fin's first-week
+// bewilderment, and a sidebar with twelve entries on day one is exactly that
+// bewilderment. These are the ones that stay hidden until they mean something;
+// Dashboard, Inbox, Knowledge and Widget are always present because they are
+// the job on day one.
+const NavSection = {
+    AGENT: "AGENT",
+    ANALYTICS: "ANALYTICS",
+    EVALUATION: "EVALUATION",
+    TABLES: "TABLES",
+    APIS: "APIS",
+    SECURITY: "SECURITY",
+    USERS: "USERS",
+};
+
 const PlanId = {
     FREE: "FREE",
     STARTER: "STARTER",
@@ -534,6 +550,7 @@ module.exports = {
     AuthProvider,
     TokenPurpose,
     OnboardingStep,
+    NavSection,
     PlanId,
     FeatureKey,
     SubscriptionStatus,

@@ -145,7 +145,7 @@ async function seed() {
         },
         escalation: { mode: EscalationMode.INBOX, email: "" },
         widget: { position: "bottom-right", allowedOrigins: ["https://acmeship.com"] },
-        credits: { plan: "GROWTH", conversationsUsed: 412, conversationsLimit: 3000 },
+        credits: { plan: PlanId.GROWTH, conversationsUsed: 412, conversationsLimit: getPlan(PlanId.GROWTH).limits.conversations },
     });
 
     /* ---------------- Dashboard seats ---------------- */
@@ -978,9 +978,18 @@ async function seed() {
     await mongoose.disconnect();
 }
 
-seed().catch(async (error) => {
-    console.log("seed: failed");
-    console.error(error);
-    await mongoose.disconnect();
-    process.exit(1);
-});
+// Only when run directly. Without this guard, `require("./scripts/seed")` —
+// an import check, a test that pulls in a helper, an editor's auto-import —
+// wipes and reloads the demo workspace against whatever MONGODB_URI happens to
+// be in .env, which on this machine is production. Merely reading a file
+// should never be able to delete anything.
+if (require.main === module) {
+    seed().catch(async (error) => {
+        console.log("seed: failed");
+        console.error(error);
+        await mongoose.disconnect();
+        process.exit(1);
+    });
+}
+
+module.exports = { seed };

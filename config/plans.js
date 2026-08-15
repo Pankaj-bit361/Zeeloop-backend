@@ -23,7 +23,12 @@ const PLANS = {
         // they want "where is my order" to work, which needs TABLES + ACTIONS.
         features: [FeatureKey.KNOWLEDGE],
         limits: {
-            conversations: 100,
+            // A conversation is a thread, not a message: `conversations` is
+            // incremented once, when the thread is created (usageFunctions
+            // `recordTurn`, on `isNewConversation`). Every later message in
+            // that thread counts as a turn instead. So this is 50 distinct
+            // visitors in a period, each of whom may ask as much as they like.
+            conversations: 50,
             sources: 3,
             actions: 0,
             tables: 0,
