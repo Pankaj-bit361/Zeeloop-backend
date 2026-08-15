@@ -15,7 +15,13 @@ router.post("/billing", async (req, res) => {
             // body cannot be re-serialised for signature checking — different
             // bytes, failed HMAC, every time.
             rawBody: req.rawBody,
+            // Lemon Squeezy signs into x-signature, Razorpay into
+            // x-razorpay-signature, and Razorpay's per-delivery event id is a
+            // header too. Rather than teach this route every provider's header
+            // names, hand over the headers and let the adapter take what it
+            // needs.
             signature: req.get("x-signature") || req.get("X-Signature"),
+            headers: req.headers,
             body: req.body,
         });
         return res.status(status).json(json);

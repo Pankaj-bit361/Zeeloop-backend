@@ -187,6 +187,7 @@ const SubscriptionStatus = {
 
 const BillingProvider = {
     LEMON_SQUEEZY: "LEMON_SQUEEZY",
+    RAZORPAY: "RAZORPAY",
     PADDLE: "PADDLE",
     // No provider — free plans and anything seeded locally.
     NONE: "NONE",

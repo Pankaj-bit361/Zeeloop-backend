@@ -153,6 +153,13 @@ module.exports = {
     LEMON_SQUEEZY_WEBHOOK_SECRET: process.env.LEMON_SQUEEZY_WEBHOOK_SECRET || "",
     // One variant id per paid plan, from the provider dashboard. Keyed by PlanId
     // so plans.js stays provider-agnostic.
+    // Razorpay. KEY_SECRET is the API secret; WEBHOOK_SECRET is a different
+    // value set on the webhook settings page — using one for the other fails
+    // every signature check in a way that looks like an attack.
+    RAZORPAY_KEY_ID: process.env.RAZORPAY_KEY_ID || "",
+    RAZORPAY_KEY_SECRET: process.env.RAZORPAY_KEY_SECRET || "",
+    RAZORPAY_WEBHOOK_SECRET: process.env.RAZORPAY_WEBHOOK_SECRET || "",
+
     BILLING_VARIANT_IDS: {
         STARTER: process.env.BILLING_VARIANT_STARTER || "",
         GROWTH: process.env.BILLING_VARIANT_GROWTH || "",

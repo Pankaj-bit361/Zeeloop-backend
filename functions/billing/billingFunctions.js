@@ -164,7 +164,7 @@ class BillingFunctions {
 
     // Webhook entry point. Verification happens here rather than in the route so
     // the route stays thin (Rule 1) and so tests can drive it directly.
-    async processWebhook({ rawBody, signature, body }) {
+    async processWebhook({ rawBody, signature, body, headers }) {
         console.log("BillingFunctions:processWebhook");
         try {
             const provider = getProvider();
@@ -172,13 +172,13 @@ class BillingFunctions {
                 return { status: 503, json: { success: false, error: "Billing is not configured on this deployment" } };
             }
 
-            if (!provider.verifySignature({ rawBody, signature })) {
+            if (!provider.verifySignature({ rawBody, signature, headers })) {
                 // 401, and deliberately no detail — a caller who cannot sign has
                 // no business learning why the signature failed.
                 return { status: 401, json: { success: false, error: "Invalid signature" } };
             }
 
-            const event = provider.parseEvent(body);
+            const event = provider.parseEvent(body, headers);
             if (!event || !event.providerEventId) {
                 // Unmodelled event. 200 so the provider stops retrying it.
                 return { status: 200, json: { success: true, data: { ignored: true } } };

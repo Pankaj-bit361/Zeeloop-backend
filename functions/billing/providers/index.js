@@ -1,6 +1,7 @@
 const config = require("../../../config/config");
 const { BillingProvider } = require("../../../config/enums");
 const lemonSqueezyProvider = require("./lemonSqueezyProvider");
+const razorpayProvider = require("./razorpayProvider");
 
 // A provider that is selected but unconfigured, or not selected at all. Every
 // method answers the same way so callers never branch on null.
@@ -15,6 +16,7 @@ const nullProvider = {
 
 const REGISTRY = {
     [BillingProvider.LEMON_SQUEEZY]: lemonSqueezyProvider,
+    [BillingProvider.RAZORPAY]: razorpayProvider,
 };
 
 // Resolved once at require time — the provider cannot change without a restart,
