@@ -1,11 +1,11 @@
 const express = require("express");
-const { reqOrgOwnerAuth } = require("../middlewares/auth");
+const { reqOrgOwnerAuth, requireRole, OWNER_OR_ADMIN } = require("../middlewares/auth");
 const complianceFunctions = require("../functions/compliance/complianceFunctions");
 const generalFunctions = require("../functions/utilFunctions/generalFunctions");
 
 const router = express.Router();
 
-router.get("/:orgId/export", reqOrgOwnerAuth, async (req, res) => {
+router.get("/:orgId/export", reqOrgOwnerAuth, requireRole(...OWNER_OR_ADMIN), async (req, res) => {
     try {
         const { status, json } = await complianceFunctions.exportWorkspace({ orgId: req.params.orgId });
         return res.status(status).json(json);
@@ -19,7 +19,7 @@ router.get("/:orgId/export", reqOrgOwnerAuth, async (req, res) => {
 
 // DELETE rather than POST: this is a deletion, and making it read like one in
 // the access logs matters when someone is auditing who erased what.
-router.delete("/:orgId/end-users/:endUserId", reqOrgOwnerAuth, async (req, res) => {
+router.delete("/:orgId/end-users/:endUserId", reqOrgOwnerAuth, requireRole(...OWNER_OR_ADMIN), async (req, res) => {
     try {
         const { status, json } = await complianceFunctions.eraseEndUser({
             orgId: req.params.orgId,

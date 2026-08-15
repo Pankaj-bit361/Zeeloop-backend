@@ -3,7 +3,7 @@ const orgFunctions = require("../functions/org/orgFunctions");
 const userFunctions = require("../functions/user/userFunctions");
 const memberFunctions = require("../functions/member/memberFunctions");
 const generalFunctions = require("../functions/utilFunctions/generalFunctions");
-const { reqOrgOwnerAuth } = require("../middlewares/auth");
+const { reqOrgOwnerAuth, requireRole, OWNER_OR_ADMIN } = require("../middlewares/auth");
 const { seatCapacity } = require("../middlewares/planGates");
 
 const router = express.Router();
@@ -123,7 +123,7 @@ router.get("/:orgId/members", reqOrgOwnerAuth, async (req, res) => {
     }
 });
 
-router.post("/:orgId/members", reqOrgOwnerAuth, ...seatCapacity, async (req, res) => {
+router.post("/:orgId/members", reqOrgOwnerAuth, requireRole(...OWNER_OR_ADMIN), ...seatCapacity, async (req, res) => {
     try {
         const { status, json } = await memberFunctions.inviteMember({
             orgId: req.params.orgId,
@@ -139,7 +139,7 @@ router.post("/:orgId/members", reqOrgOwnerAuth, ...seatCapacity, async (req, res
     }
 });
 
-router.delete("/:orgId/members/:memberId", reqOrgOwnerAuth, async (req, res) => {
+router.delete("/:orgId/members/:memberId", reqOrgOwnerAuth, requireRole(...OWNER_OR_ADMIN), async (req, res) => {
     try {
         const { status, json } = await memberFunctions.removeMember({
             orgId: req.params.orgId,

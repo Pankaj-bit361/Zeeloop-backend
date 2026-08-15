@@ -4,7 +4,7 @@ const auditFunctions = require("../functions/audit/auditFunctions");
 const outboundWebhookFunctions = require("../functions/webhook/outboundWebhookFunctions");
 const securityFunctions = require("../functions/security/securityFunctions");
 const generalFunctions = require("../functions/utilFunctions/generalFunctions");
-const { reqOrgOwnerAuth } = require("../middlewares/auth");
+const { reqOrgOwnerAuth, requireRole, OWNER_OR_ADMIN } = require("../middlewares/auth");
 
 const router = express.Router();
 
@@ -83,7 +83,7 @@ router.get("/:orgId/security", reqOrgOwnerAuth, async (req, res) => {
     }
 });
 
-router.patch("/:orgId/security/origins", reqOrgOwnerAuth, async (req, res) => {
+router.patch("/:orgId/security/origins", reqOrgOwnerAuth, requireRole(...OWNER_OR_ADMIN), async (req, res) => {
     try {
         const { status, json } = await securityFunctions.updateOriginAllowlist({
             orgId: req.params.orgId,
@@ -100,7 +100,7 @@ router.patch("/:orgId/security/origins", reqOrgOwnerAuth, async (req, res) => {
 
 // Rotation with a grace window: the old secret keeps working while the customer
 // deploys their new signing code (§8.4).
-router.post("/:orgId/security/rotate-secret", reqOrgOwnerAuth, async (req, res) => {
+router.post("/:orgId/security/rotate-secret", reqOrgOwnerAuth, requireRole(...OWNER_OR_ADMIN), async (req, res) => {
     try {
         const { status, json } = await securityFunctions.rotateWidgetSecret({
             orgId: req.params.orgId,
@@ -141,7 +141,7 @@ router.get("/:orgId/api-keys", reqOrgOwnerAuth, async (req, res) => {
 
 // The response carries the plaintext key. It is the only time it exists outside
 // the caller's memory — there is deliberately no endpoint that returns it again.
-router.post("/:orgId/api-keys", reqOrgOwnerAuth, async (req, res) => {
+router.post("/:orgId/api-keys", reqOrgOwnerAuth, requireRole(...OWNER_OR_ADMIN), async (req, res) => {
     try {
         const { status, json } = await expansionFunctions.createApiKey({
             orgId: req.params.orgId,
@@ -158,7 +158,7 @@ router.post("/:orgId/api-keys", reqOrgOwnerAuth, async (req, res) => {
 
 // Revoked, not deleted: the row has to survive so "which key did that" stays
 // answerable from the audit log.
-router.delete("/:orgId/api-keys/:apiKeyId", reqOrgOwnerAuth, async (req, res) => {
+router.delete("/:orgId/api-keys/:apiKeyId", reqOrgOwnerAuth, requireRole(...OWNER_OR_ADMIN), async (req, res) => {
     try {
         const { status, json } = await expansionFunctions.revokeApiKey({
             orgId: req.params.orgId,

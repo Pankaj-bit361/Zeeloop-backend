@@ -1,5 +1,5 @@
 const express = require("express");
-const { reqOrgOwnerAuth } = require("../middlewares/auth");
+const { reqOrgOwnerAuth, requireRole, OWNER_OR_ADMIN } = require("../middlewares/auth");
 const billingFunctions = require("../functions/billing/billingFunctions");
 const usageFunctions = require("../functions/billing/usageFunctions");
 const generalFunctions = require("../functions/utilFunctions/generalFunctions");
@@ -33,7 +33,7 @@ router.get("/:orgId/billing/usage", reqOrgOwnerAuth, async (req, res) => {
     }
 });
 
-router.post("/:orgId/billing/checkout", reqOrgOwnerAuth, async (req, res) => {
+router.post("/:orgId/billing/checkout", reqOrgOwnerAuth, requireRole(...OWNER_OR_ADMIN), async (req, res) => {
     try {
         const { status, json } = await billingFunctions.createCheckout({
             orgId: req.params.orgId,
@@ -50,7 +50,7 @@ router.post("/:orgId/billing/checkout", reqOrgOwnerAuth, async (req, res) => {
     }
 });
 
-router.post("/:orgId/billing/cancel", reqOrgOwnerAuth, async (req, res) => {
+router.post("/:orgId/billing/cancel", reqOrgOwnerAuth, requireRole(...OWNER_OR_ADMIN), async (req, res) => {
     try {
         const { status, json } = await billingFunctions.cancelSubscription({ orgId: req.params.orgId });
         return res.status(status).json(json);

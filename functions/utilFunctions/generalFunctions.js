@@ -105,4 +105,24 @@ class GeneralFunctions {
     }
 }
 
+/* §8.6 — the coercion every id-shaped lookup value goes through.
+
+   Mongoose will happily take an object where a string was meant and treat it
+   as a query operator, so `findOne({ publicKey })` with a body-supplied
+   `{"$ne": null}` matches an arbitrary tenant's row. Coercing at the lookup is
+   the real fix; middlewares/sanitize.js is the second line.
+
+   Returns null rather than throwing, and null is never a valid id, so callers
+   that already handle "not found" handle a hostile value the same way with no
+   new branch. A non-string is rejected outright rather than String()-ed,
+   because String({$ne:null}) is "[object Object]" — harmless, but it turns an
+   attack into a confusing 404 instead of something greppable. */
+function asId(value) {
+    if (typeof value !== "string") return null;
+    const trimmed = value.trim();
+    if (!trimmed || trimmed.length > 200) return null;
+    return trimmed;
+}
+
 module.exports = new GeneralFunctions();
+module.exports.asId = asId;

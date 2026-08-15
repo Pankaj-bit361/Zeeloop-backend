@@ -159,10 +159,23 @@ router.post("/:orgId/procedures-v2", reqOrgOwnerAuth, async (req, res) => {
 
 router.patch("/:orgId/procedures-v2/:procedureId", reqOrgOwnerAuth, async (req, res) => {
     try {
+        /* Fields are named explicitly. This spread `...req.body` AFTER orgId,
+           so a body-supplied orgId overwrote the one from the authenticated
+           path and the update went to another tenant's procedure — while
+           reqOrgOwnerAuth, which only compares the JWT to req.params, saw
+           nothing wrong. It was the only spread of a request body in the whole
+           routes tree. */
         const { status, json } = await procedureFunctions.updateProcedure({
             orgId: req.params.orgId,
             procedureId: req.params.procedureId,
-            ...req.body,
+            name: req.body.name,
+            description: req.body.description,
+            triggerType: req.body.triggerType,
+            keywords: req.body.keywords,
+            intentDescription: req.body.intentDescription,
+            eventName: req.body.eventName,
+            steps: req.body.steps,
+            enabled: req.body.enabled,
         });
         return res.status(status).json(json);
     } catch (error) {

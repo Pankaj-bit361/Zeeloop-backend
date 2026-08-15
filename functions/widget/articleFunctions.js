@@ -4,6 +4,7 @@ const Org = require("../../models/org/org");
 const Chunk = require("../../models/knowledge/chunk");
 const KnowledgeSource = require("../../models/knowledge/knowledgeSource");
 const generalFunctions = require("../utilFunctions/generalFunctions");
+const { asId } = require("../utilFunctions/generalFunctions");
 const llmFunctions = require("../utilFunctions/llmFunctions");
 
 // §4.9 — article search and reading inside the widget.
@@ -31,7 +32,7 @@ class ArticleFunctions {
     async searchArticles({ publicKey, query, limit }) {
         console.log("ArticleFunctions:searchArticles: query:", query ? "set" : "empty");
         try {
-            const org = await Org.findOne({ publicKey }).select("orgId").lean();
+            const org = await Org.findOne({ publicKey: asId(publicKey) }).select("orgId").lean();
             if (!org) return { status: 404, json: { success: false, error: "Unknown publicKey" } };
 
             const trimmed = String(query || "").trim();
@@ -59,7 +60,7 @@ class ArticleFunctions {
     async listArticles({ publicKey, limit }) {
         console.log("ArticleFunctions:listArticles");
         try {
-            const org = await Org.findOne({ publicKey }).select("orgId").lean();
+            const org = await Org.findOne({ publicKey: asId(publicKey) }).select("orgId").lean();
             if (!org) return { status: 404, json: { success: false, error: "Unknown publicKey" } };
 
             const sources = await KnowledgeSource.find({ orgId: org.orgId, status: SourceStatus.READY })
@@ -95,7 +96,7 @@ class ArticleFunctions {
     async getArticle({ publicKey, sourceId }) {
         console.log("ArticleFunctions:getArticle: sourceId:", sourceId);
         try {
-            const org = await Org.findOne({ publicKey }).select("orgId").lean();
+            const org = await Org.findOne({ publicKey: asId(publicKey) }).select("orgId").lean();
             if (!org) return { status: 404, json: { success: false, error: "Unknown publicKey" } };
 
             // Scoped by orgId as well as sourceId. Without the orgId a guessed

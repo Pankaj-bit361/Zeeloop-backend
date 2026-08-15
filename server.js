@@ -47,6 +47,7 @@ const crawlWorker = require("./functions/knowledge/crawlWorker");
 const knowledgeFunctions = require("./functions/knowledge/knowledgeFunctions");
 const expansionFunctions = require("./functions/expansion/expansionFunctions");
 const { requestContext } = require("./middlewares/requestContext");
+const { sanitize } = require("./middlewares/sanitize");
 const { widgetRateLimit } = require("./middlewares/rateLimit");
 const { enforceOriginAllowlist } = require("./middlewares/originAllowlist");
 const logger = require("./functions/utilFunctions/logger");
@@ -80,6 +81,15 @@ app.use(
     })
 );
 app.use(cookieParser());
+
+/* §8.6 — reject MongoDB operator syntax in anything a client sends, before it
+   can reach a query. Mounted after the body parser and before every route, so
+   there is no path into the app that skips it.
+
+   Webhook signature verification is unaffected: it reads req.rawBody, captured
+   by the express.json verify hook above, so a rejected body is rejected before
+   it matters and a legitimate one still verifies against the original bytes. */
+app.use(sanitize);
 
 // Widget routes are public and CORS * — the whole point is running on customer sites.
 const widgetCors = cors({ origin: "*" });

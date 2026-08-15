@@ -138,8 +138,20 @@ class MemberFunctions {
         }
     }
 
-    // Finds or creates the seat for this email. The org's ownerEmail always maps
-    // to the OWNER seat, so a freshly reset org still has a real identity.
+    /* Finds the seat for this email, creating one ONLY for the org's owner.
+
+       §8.6 — this used to create an ACTIVE AGENT seat for anyone whose token
+       named this org, and it is called from GET /:orgId/me, which the
+       dashboard hits on every load. So removing someone from a workspace was
+       undone by their own browser: their still-valid token re-created the seat,
+       which re-satisfied the membership check, indefinitely. It also
+       manufactured seats past the plan's seat cap that had just refused an
+       invite.
+
+       The owner is the one legitimate auto-provision: an org restored from
+       backup, or one whose member row was lost, must still have a way in, and
+       the owner's identity is a property of the Org document rather than
+       something the caller asserts. Everyone else has to be invited. */
     async _ensureMember({ orgId, email }) {
         const normalized = String(email).trim().toLowerCase();
         const existing = await Member.findOne({ orgId, email: normalized });
@@ -149,6 +161,10 @@ class MemberFunctions {
         if (!org) return { success: false, status: 404, error: "Org not found" };
 
         const isOwner = String(org.ownerEmail).trim().toLowerCase() === normalized;
+        if (!isOwner) {
+            return { success: false, status: 403, error: "You do not have access to this workspace" };
+        }
+
         const member = await Member.create({
             orgId,
             memberId: generalFunctions.generateId(IdPrefix.MEMBER),

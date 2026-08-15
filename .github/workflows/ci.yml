@@ -56,6 +56,9 @@ jobs:
           # boot and would report CI traffic as production data.
           NEW_RELIC_ENABLED: "false"
           SESSION_SECRET: ci-only-session-secret-not-a-real-one
+          JWT_SECRET: ci-only-jwt-secret-not-a-real-one
+          # The suite authenticates through dev-login; it fails closed without this.
+          ENABLE_DEV_LOGIN: "true"
           ENCRYPTION_KEY: "0000000000000000000000000000000000000000000000000000000000000000"
 
   audit:

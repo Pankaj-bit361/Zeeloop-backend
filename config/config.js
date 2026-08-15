@@ -4,16 +4,59 @@ const PORT = process.env.PORT || 4000;
 const DEFAULT_SESSION_SECRET = "zealoop-dev-session-secret-change-in-production";
 const SESSION_SECRET = process.env.SESSION_SECRET || DEFAULT_SESSION_SECRET;
 
-// A guessable HMAC secret means anyone can mint a session cookie for any
-// account. Refuse to boot rather than run silently forgeable.
-if (process.env.NODE_ENV === "production" && SESSION_SECRET === DEFAULT_SESSION_SECRET) {
-    throw new Error("SESSION_SECRET must be set to a non-default value in production.");
+const DEFAULT_JWT_SECRET = "change-me-in-production";
+const DEFAULT_ENCRYPTION_KEY = "0000000000000000000000000000000000000000000000000000000000000000";
+
+/* §8.6 — every secret that is load-bearing fails CLOSED.
+
+   Only SESSION_SECRET used to be checked, and only when NODE_ENV was
+   "production" — a variable this repo sets nowhere, so in practice the check
+   never ran at all. The other two had defaults that are published verbatim in
+   .env.example and ci.yml:
+
+     JWT_SECRET is the entire tenancy boundary. Every /api/org route trusts the
+     orgId inside a token signed with it. Known secret means anyone mints a
+     token for any workspace, and nothing anywhere logs that it happened.
+
+     ENCRYPTION_KEY is 64 zeros, which parses as a perfectly valid AES-256 key
+     — so it fails silently rather than loudly. Widget secrets, action
+     credentials and webhook secrets encrypted under it are readable by anyone
+     with a copy of this repo, and RUNBOOK §8 states there is no recovery path
+     for data encrypted under a lost or wrong key.
+
+   The gate is now inverted: insecure defaults are refused UNLESS an operator
+   has explicitly said this is a development machine. An unset variable is the
+   dangerous case, so an unset variable is the one that stops the boot. */
+const ALLOW_INSECURE = process.env.ALLOW_INSECURE_DEFAULTS === "true";
+
+const INSECURE = [
+    ["SESSION_SECRET", SESSION_SECRET, DEFAULT_SESSION_SECRET],
+    ["JWT_SECRET", process.env.JWT_SECRET || DEFAULT_JWT_SECRET, DEFAULT_JWT_SECRET],
+    ["ENCRYPTION_KEY", process.env.ENCRYPTION_KEY || DEFAULT_ENCRYPTION_KEY, DEFAULT_ENCRYPTION_KEY],
+].filter(([, value, fallback]) => value === fallback);
+
+if (INSECURE.length && !ALLOW_INSECURE) {
+    throw new Error(
+        `Refusing to boot: ${INSECURE.map(([name]) => name).join(", ")} ` +
+            `${INSECURE.length === 1 ? "is" : "are"} unset or still the published default value. ` +
+            "Set them, or set ALLOW_INSECURE_DEFAULTS=true if this is a development machine."
+    );
+}
+
+if (INSECURE.length) {
+    console.warn(
+        `config: running with insecure default ${INSECURE.map(([name]) => name).join(", ")} ` +
+            "— ALLOW_INSECURE_DEFAULTS is set. Never do this on a deployment that holds real data."
+    );
 }
 
 module.exports = {
     PORT,
     MONGODB_URI: process.env.MONGODB_URI || "mongodb://localhost:27017/zealoop",
-    JWT_SECRET: process.env.JWT_SECRET || "change-me-in-production",
+    JWT_SECRET: process.env.JWT_SECRET || DEFAULT_JWT_SECRET,
+    // Explicit opt-in for the dev-login route. Anything but the exact string
+    // "true" — including absence — leaves it off. See authFunctions.devLogin.
+    ENABLE_DEV_LOGIN: process.env.ENABLE_DEV_LOGIN === "true",
 
     // ── dashboard sign-in ──
     SESSION_SECRET,
@@ -37,7 +80,7 @@ module.exports = {
     GITHUB_CLIENT_SECRET: process.env.GITHUB_CLIENT_SECRET || "",
 
     // 32-byte hex key for AES-256-GCM
-    ENCRYPTION_KEY: process.env.ENCRYPTION_KEY || "0000000000000000000000000000000000000000000000000000000000000000",
+    ENCRYPTION_KEY: process.env.ENCRYPTION_KEY || DEFAULT_ENCRYPTION_KEY,
     SENTRY_DSN: process.env.SENTRY_DSN || "",
     // Read directly from process.env in server.js and requestContext.js — the
     // agent has to load before this module does. Mirrored here for visibility.

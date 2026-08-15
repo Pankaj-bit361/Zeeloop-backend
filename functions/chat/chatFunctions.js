@@ -17,6 +17,7 @@ const {
     QuotaState,
 } = require("../../config/enums");
 const generalFunctions = require("../utilFunctions/generalFunctions");
+const { asId } = require("../utilFunctions/generalFunctions");
 const themeDerivation = require("../utilFunctions/themeDerivation");
 const usageFunctions = require("../billing/usageFunctions");
 const agentFunctions = require("../agent/agentFunctions");
@@ -47,7 +48,7 @@ class ChatFunctions {
             if (!publicKey) {
                 return { status: 400, json: { success: false, error: "Invalid request. Please pass publicKey" } };
             }
-            const org = await Org.findOne({ publicKey });
+            const org = await Org.findOne({ publicKey: asId(publicKey) });
             if (!org) {
                 return { status: 404, json: { success: false, error: "Unknown publicKey" } };
             }
@@ -57,7 +58,7 @@ class ChatFunctions {
             // No conversation is created here — threads spawn lazily on the first
             // message, so idle widget loads never leave empty rows in the inbox.
             const conversation = conversationId
-                ? await Conversation.findOne({ orgId: org.orgId, conversationId })
+                ? await Conversation.findOne({ orgId: org.orgId, conversationId: asId(conversationId) })
                 : null;
 
             const messages = conversation
@@ -160,7 +161,7 @@ class ChatFunctions {
                     json: { success: false, error: "Invalid request. Please pass publicKey and content" },
                 };
             }
-            const org = await Org.findOne({ publicKey });
+            const org = await Org.findOne({ publicKey: asId(publicKey) });
             if (!org) {
                 return { status: 404, json: { success: false, error: "Unknown publicKey" } };
             }
@@ -197,7 +198,7 @@ class ChatFunctions {
             }
 
             let conversation = conversationId
-                ? await Conversation.findOne({ orgId: org.orgId, conversationId })
+                ? await Conversation.findOne({ orgId: org.orgId, conversationId: asId(conversationId) })
                 : null;
             if (conversationId && !conversation) {
                 return { status: 404, json: { success: false, error: "Conversation not found" } };
@@ -387,11 +388,11 @@ class ChatFunctions {
                     json: { success: false, error: "Invalid request. Please pass publicKey and conversationId" },
                 };
             }
-            const org = await Org.findOne({ publicKey });
+            const org = await Org.findOne({ publicKey: asId(publicKey) });
             if (!org) {
                 return { status: 404, json: { success: false, error: "Unknown publicKey" } };
             }
-            const conversation = await Conversation.findOne({ orgId: org.orgId, conversationId });
+            const conversation = await Conversation.findOne({ orgId: org.orgId, conversationId: asId(conversationId) });
             if (!conversation) {
                 return { status: 404, json: { success: false, error: "Conversation not found" } };
             }
@@ -477,7 +478,7 @@ class ChatFunctions {
                     json: { success: false, error: "Invalid request. Please pass publicKey, conversationId and rating (UP|DOWN)" },
                 };
             }
-            const org = await Org.findOne({ publicKey });
+            const org = await Org.findOne({ publicKey: asId(publicKey) });
             if (!org) {
                 return { status: 404, json: { success: false, error: "Unknown publicKey" } };
             }
@@ -510,7 +511,7 @@ class ChatFunctions {
                     json: { success: false, error: "Invalid request. Please pass publicKey and conversationIds" },
                 };
             }
-            const org = await Org.findOne({ publicKey });
+            const org = await Org.findOne({ publicKey: asId(publicKey) });
             if (!org) {
                 return { status: 404, json: { success: false, error: "Unknown publicKey" } };
             }
@@ -545,7 +546,7 @@ class ChatFunctions {
             if (!publicKey) {
                 return { status: 400, json: { success: false, error: "Invalid request. Please pass publicKey" } };
             }
-            const org = await Org.findOne({ publicKey });
+            const org = await Org.findOne({ publicKey: asId(publicKey) });
             if (!org) {
                 return { status: 404, json: { success: false, error: "Unknown publicKey" } };
             }

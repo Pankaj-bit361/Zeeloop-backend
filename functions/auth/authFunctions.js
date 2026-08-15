@@ -80,23 +80,26 @@ class AuthFunctions {
             }
             const displayName = String(name || "").trim() || normalized.split("@")[0];
 
+            /* §8.6 — ANY existing account is a conflict. No exceptions.
+
+               This used to return 409 only when `passwordSetAt` was set, and
+               claim the account otherwise. Every Google and GitHub account is
+               created with passwordSetAt null by design, so the exception was
+               the rule: posting a victim's address with a password of your
+               choosing overwrote their credential and signed you in as them.
+               The address is not a secret — it is the org's ownerEmail, listed
+               in the members table.
+
+               The old comment said "the provider already proved they own it".
+               It proved the VICTIM owns it. It proved nothing whatsoever about
+               the anonymous request now claiming it.
+
+               An OAuth user who wants a password uses the reset flow, which
+               sends a token to the address and therefore actually establishes
+               that the person asking can receive mail there. */
             const existing = await Account.findOne({ email: normalized });
-            if (existing && existing.passwordSetAt) {
-                return { status: 409, json: { success: false, error: "An account with that email already exists" } };
-            }
-            // Provisioned by Google or GitHub but never given a password: this
-            // signup claims it rather than failing. The address is the identity
-            // and the provider already proved they own it.
             if (existing) {
-                existing.name = existing.name || displayName;
-                existing.passwordHash = sessionFunctions.hashPassword(String(password));
-                existing.passwordSetAt = new Date();
-                existing.lastLoginAt = new Date();
-                if (!existing.providers.includes(AuthProvider.PASSWORD)) {
-                    existing.providers.push(AuthProvider.PASSWORD);
-                }
-                await existing.save();
-                return { status: 200, json: { success: true, data: { accountId: existing.accountId } } };
+                return { status: 409, json: { success: false, error: "An account with that email already exists" } };
             }
 
             const account = await Account.create({
@@ -595,8 +598,23 @@ class AuthFunctions {
     async devLogin({ orgId }) {
         console.log("AuthFunctions:devLogin: orgId:", orgId);
         try {
-            if (process.env.NODE_ENV === "production") {
-                return { status: 403, json: { success: false, error: "Dev login is disabled in production" } };
+            /* §8.6 — fails CLOSED, on an explicit opt-in.
+
+               This route mints a 7-day JWT as the org owner for any orgId you
+               name, and reqOrgOwnerAuth accepts it everywhere. It was gated on
+               NODE_ENV !== "production" — a variable set nowhere in this repo:
+               not in .env, not in .env.example, not in package.json's start
+               script, and there is no Dockerfile or deploy manifest to set it.
+               An absent variable is not "production", so the gate was open,
+               and the orgId it needs is handed to any anonymous visitor by the
+               widget bootstrap using a publicKey scraped from page source.
+
+               ENABLE_DEV_LOGIN must now be present and exactly "true".
+               Absence disables it, which is the direction a mistake should
+               fail in. NODE_ENV is kept as a second veto so that setting it
+               correctly also closes this, whichever one an operator remembers. */
+            if (config.ENABLE_DEV_LOGIN !== true || process.env.NODE_ENV === "production") {
+                return { status: 404, json: { success: false, error: "Not found" } };
             }
             if (!orgId) {
                 return { status: 400, json: { success: false, error: "Invalid request. Please pass orgId" } };
