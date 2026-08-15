@@ -1,0 +1,107 @@
+name: CI
+
+# §8.4 — dependency and container scanning in CI.
+#
+# Three jobs, deliberately separate so a failure names itself:
+#   test    the suite, against a real MongoDB
+#   audit   known vulnerabilities in dependencies
+#   secrets a scan for credentials committed by accident
+#
+# The secrets job is the one that has already earned its place: this project has
+# had API keys pasted into a terminal, and the distance between "pasted into a
+# terminal" and "committed to a file" is one careless save.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  # Weekly, because a dependency that was clean on Monday can have a CVE by
+  # Friday and nothing about this repo will have changed.
+  schedule:
+    - cron: "0 6 * * 1"
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    services:
+      mongodb:
+        image: mongo:7
+        ports:
+          - 27017:27017
+        options: >-
+          --health-cmd "mongosh --quiet --eval 'db.runCommand({ping:1})'"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+
+      - run: npm ci
+
+      - name: Run the suite
+        run: npm test
+        env:
+          # Never the production URI. `npm run seed` wipes whatever it points
+          # at, and a CI job with production credentials is one typo from a
+          # very bad afternoon.
+          MONGODB_URI: mongodb://127.0.0.1:27017/zealoop_ci
+          TEST_MONGODB_URI: mongodb://127.0.0.1:27017/zealoop_ci
+          # The agent spends six seconds probing cloud metadata endpoints on
+          # boot and would report CI traffic as production data.
+          NEW_RELIC_ENABLED: "false"
+          SESSION_SECRET: ci-only-session-secret-not-a-real-one
+          ENCRYPTION_KEY: "0000000000000000000000000000000000000000000000000000000000000000"
+
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+
+      - run: npm ci
+
+      # High and critical only. Failing the build on every low-severity
+      # advisory in a transitive dev dependency trains everyone to ignore this
+      # job, which is worse than not having it.
+      - name: Audit dependencies
+        run: npm audit --audit-level=high
+
+      # Reported but not enforced: an outdated dependency is information, not a
+      # reason to block a fix from shipping.
+      - name: Report outdated dependencies
+        run: npm outdated || true
+
+  secrets:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # gitleaks needs history to scan commits, not just the tree.
+          fetch-depth: 0
+
+      - name: Scan for committed credentials
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # A belt-and-braces grep for the specific key shapes this project uses.
+      # gitleaks is good at generic patterns; these are ours.
+      - name: Check for project-specific key shapes
+        run: |
+          set -e
+          PATTERNS='NRAK-|[0-9a-f]{36}NRAL|sk-or-v1-|mongodb\+srv://[^ ]*:[^ ]*@|whsec_[0-9a-f]{32}|zk_live_[0-9a-f]{32}'
+          # .env is gitignored; this checks nothing slipped into a tracked file.
+          if git grep -nEI "$PATTERNS" -- ':!*.example' ':!.github/workflows/*'; then
+            echo "::error::A credential-shaped string is present in a tracked file."
+            exit 1
+          fi
+          echo "No project-specific credential patterns found in tracked files."

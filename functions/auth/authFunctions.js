@@ -8,6 +8,8 @@ const Org = require("../../models/org/org");
 const { AuthProvider, TokenPurpose, MemberRole, MemberStatus, IdPrefix } = require("../../config/enums");
 const generalFunctions = require("../utilFunctions/generalFunctions");
 const sessionFunctions = require("../utilFunctions/sessionFunctions");
+const attributeFunctions = require("../config/attributeFunctions");
+const subscriptionFunctions = require("../billing/subscriptionFunctions");
 
 const GENERIC_ERROR = "Internal server error, please contact support";
 // One message for "no such account" and "wrong password" alike. Two distinct
@@ -295,6 +297,18 @@ class AuthFunctions {
                 status: MemberStatus.ACTIVE,
                 lastActiveAt: new Date(),
             });
+
+            // §2.3 — Sentiment, Issue Type, Urgency and Spam ship live and on.
+            // A workspace whose inbox has four permanently empty columns until
+            // someone discovers a settings page has been given homework.
+            // Awaited rather than fired off, because a workspace created without
+            // them looks broken and there is no later moment that fixes it.
+            await attributeFunctions.seedBuiltIns({ orgId });
+
+            // §0.5 — the 14-day trial starts here, not at first payment. No card
+            // is required, so an expired trial drops to FREE rather than
+            // suspending anything.
+            await subscriptionFunctions.startTrial({ orgId });
 
             return {
                 status: 201,

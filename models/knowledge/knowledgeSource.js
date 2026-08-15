@@ -19,6 +19,38 @@ const knowledgeSourceSchema = new mongoose.Schema(
         chunkCount: { type: Number, default: 0 },
         lastSyncedAt: { type: Date },
         lastError: { type: String },
+
+        // §1.2 — FILE sources. The extracted text is stored so a re-sync does
+        // not need the original upload, and so a per-file re-upload REPLACES
+        // rather than appending a second copy of the same manual.
+        file: {
+            filename: { type: String, default: null },
+            mimeType: { type: String, default: null },
+            bytes: { type: Number, default: 0 },
+            // "full" or "partial" — see fileFunctions. Surfaced in the UI so a
+            // badly-extracted PDF is visible rather than merely retrieving
+            // poorly.
+            extractionQuality: { type: String, default: null },
+        },
+
+        // §1.4 — content hash per document, keyed by URL. A page whose hash is
+        // unchanged skips embedding entirely, which is the difference between a
+        // daily re-sync costing one embedding call and costing four hundred.
+        documentHashes: { type: mongoose.Schema.Types.Mixed, default: {} },
+
+        // §1.4 — how often to re-sync. MANUAL is the default: a schedule nobody
+        // asked for is a bill nobody expected.
+        syncSchedule: { type: String, enum: ["MANUAL", "DAILY", "WEEKLY"], default: "MANUAL" },
+        nextSyncAt: { type: Date, default: null },
+
+        // §1.4 — the diff from the last sync, so "what changed" is answerable
+        // without comparing two crawls by hand.
+        lastDiff: {
+            added: { type: Number, default: 0 },
+            updated: { type: Number, default: 0 },
+            removed: { type: Number, default: 0 },
+            unchanged: { type: Number, default: 0 },
+        },
     },
     {
         timestamps: true,

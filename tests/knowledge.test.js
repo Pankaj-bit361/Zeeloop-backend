@@ -1,7 +1,7 @@
 "use strict";
 const { test, describe, before, after } = require("node:test");
 const assert = require("node:assert/strict");
-const { get, post, del, devLogin, authHeader, SEED_ORG_ID, randomSuffix } = require("./helpers/client");
+const { get, post, del, request, devLogin, authHeader, SEED_ORG_ID, randomSuffix } = require("./helpers/client");
 
 let AUTH_A;
 const createdSourceIds = [];
@@ -48,33 +48,44 @@ describe("POST /api/knowledge/:orgId/sources — validation and type-specific re
         assert.equal(result.status, 400);
     });
 
-    // SITEMAP is implemented as of §1.1. It is no longer a 501; a URL with no
-    // reachable sitemap now fails on its merits, which is a different and
-    // better failure. Parsing and the include/exclude heuristics are covered
-    // exhaustively in sitemap.test.js without touching the network.
-    test("SITEMAP is accepted, and a URL with no sitemap fails on its merits rather than as unimplemented", async () => {
+    // SITEMAP is implemented (§1.1) and, as of §1.3, QUEUED rather than crawled
+    // inline — a hundred-page crawl no longer holds a request thread open and
+    // no longer dies with a deploy. So the response is a job id and a PENDING
+    // source, not a finished ingest.
+    //
+    // Parsing and the include/exclude heuristics are covered exhaustively in
+    // sitemap.test.js without touching the network; the queue's own semantics
+    // are in crawlWorker.test.js.
+    test("SITEMAP is accepted and queued to the crawl worker rather than run inline", async () => {
         const result = await post(`/api/knowledge/${SEED_ORG_ID}/sources`, {
             headers: AUTH_A,
             body: {
                 type: "SITEMAP",
                 name: `probe-sitemap-${randomSuffix()}`,
                 // Reserved by RFC 2606 and guaranteed never to resolve, so this
-                // exercises the failure path without depending on a real site.
+                // exercises the path without depending on a real site.
                 url: "https://sitemap-probe.invalid/sitemap.xml",
             },
         });
+
         assert.notEqual(result.status, 501, "SITEMAP is implemented now");
+        assert.equal(result.json.queued, true, "a sitemap crawl must not run on the request thread");
+        assert.ok(result.json.crawlJobId, "and must come back with a job to poll");
         createdSourceIds.push(result.json.data.sourceId);
 
+        // PENDING, not FAILED: nothing has been attempted yet. The worker will
+        // attempt it, retry with backoff, and dead-letter it — which is the
+        // behaviour crawlWorker.test.js asserts directly.
         const listed = await get(`/api/knowledge/${SEED_ORG_ID}/sources`, { headers: AUTH_A });
         const persisted = listed.json.data.find((s) => s.sourceId === result.json.data.sourceId);
-        assert.equal(persisted.status, "FAILED", "an unreachable sitemap should persist as FAILED");
-        assert.ok(persisted.lastError, "and should say why");
-        assert.equal(
-            /not implemented/i.test(persisted.lastError),
-            false,
-            "the failure should be about the sitemap, not about the feature missing"
-        );
+        assert.equal(persisted.status, "PENDING", "a queued crawl starts PENDING, not FAILED");
+
+        // And the job is pollable from the source.
+        const job = await get(`/api/org/${SEED_ORG_ID}/knowledge/sources/${result.json.data.sourceId}/crawl`, {
+            headers: AUTH_A,
+        });
+        assert.equal(job.status, 200);
+        assert.ok(job.json.data, "the crawl job must be readable from its source");
     });
 
     test("POST /api/knowledge/:orgId/sitemap/discover previews URLs without ingesting", async () => {
@@ -94,13 +105,72 @@ describe("POST /api/knowledge/:orgId/sources — validation and type-specific re
         assert.equal(result.status, 401);
     });
 
-    test("FILE ingestion is deferred (§13) — returns 501", async () => {
-        const result = await post(`/api/knowledge/${SEED_ORG_ID}/sources`, {
+    // FILE ingestion is implemented (§1.2) and goes through its own upload
+    // endpoint, because the file has to be validated and extracted before a
+    // source exists. Extraction itself is covered format by format in
+    // fileIngest.test.js.
+    test("FILE upload extracts, indexes and reports its extraction quality", async () => {
+        const markdown = `# Refund policy\n\nRefunds are issued within 30 days of purchase.\n\n## Exceptions\n\nDigital goods are non-refundable once downloaded.`;
+        const result = await post(`/api/org/${SEED_ORG_ID}/knowledge/upload`, {
             headers: AUTH_A,
-            body: { type: "FILE", name: `probe-file-${randomSuffix()}.pdf` },
+            body: {
+                filename: `probe-${randomSuffix()}.md`,
+                mimeType: "text/markdown",
+                base64: Buffer.from(markdown).toString("base64"),
+            },
         });
-        assert.equal(result.status, 501);
+
+        assert.equal(result.status, 201);
+        assert.equal(result.json.data.status, "READY");
+        assert.ok(result.json.data.chunkCount > 0, "an uploaded file must produce chunks");
+        // Surfaced rather than buried: a partially-extracted PDF retrieves badly
+        // and the customer should learn that now, not from a bad answer later.
+        assert.equal(result.json.extractionQuality, "full");
         createdSourceIds.push(result.json.data.sourceId);
+    });
+
+    test("FILE upload refuses a file whose bytes contradict its extension", async () => {
+        const result = await post(`/api/org/${SEED_ORG_ID}/knowledge/upload`, {
+            headers: AUTH_A,
+            body: {
+                filename: `probe-${randomSuffix()}.pdf`,
+                mimeType: "application/pdf",
+                base64: Buffer.from("this is definitely not a pdf").toString("base64"),
+            },
+        });
+        assert.equal(result.status, 400);
+        assert.match(result.json.error, /does not look like a PDF/);
+    });
+
+    test("re-uploading to the same source replaces rather than duplicating", async () => {
+        // Otherwise a workspace ends up with "Handbook", "Handbook (1)" and
+        // "Handbook final" all in the retrieval index at once.
+        const first = await post(`/api/org/${SEED_ORG_ID}/knowledge/upload`, {
+            headers: AUTH_A,
+            body: {
+                filename: `handbook-${randomSuffix()}.md`,
+                base64: Buffer.from("# Handbook\n\nVersion one content.").toString("base64"),
+            },
+        });
+        assert.equal(first.status, 201);
+        const sourceId = first.json.data.sourceId;
+        createdSourceIds.push(sourceId);
+
+        const second = await request("PUT", `/api/org/${SEED_ORG_ID}/knowledge/sources/${sourceId}/file`, {
+            headers: AUTH_A,
+            body: {
+                filename: "handbook-v2.md",
+                base64: Buffer.from("# Handbook\n\nCompletely different version two content.").toString("base64"),
+            },
+        });
+
+        assert.equal(second.status, 200, "a re-upload updates in place");
+        assert.equal(second.json.data.sourceId, sourceId, "and keeps the same source id");
+
+        const chunks = await get(`/api/knowledge/${SEED_ORG_ID}/chunks?sourceId=${sourceId}`, { headers: AUTH_A });
+        const text = chunks.json.data.map((chunk) => chunk.text).join(" ");
+        assert.match(text, /version two/i);
+        assert.doesNotMatch(text, /Version one/i, "the old file's chunks must be gone, not merely joined");
     });
 
     test("happy path: SNIPPET source ingests synchronously and becomes READY", async () => {

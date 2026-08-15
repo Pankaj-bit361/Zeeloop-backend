@@ -11,6 +11,11 @@ router.post("/bootstrap", async (req, res) => {
             conversationId: req.body.conversationId,
             identity: req.body.identity,
             accentColor: req.body.accentColor,
+            // §4.3 — launcher visibility depends on the page, and §1.6 step 5
+            // records the origin as proof the widget is actually installed.
+            pageUrl: req.body.pageUrl,
+            pageSettings: req.body.settings,
+            origin: req.get("origin") || null,
         });
         return res.status(status).json(json);
     } catch (error) {
@@ -28,6 +33,8 @@ router.post("/messages", async (req, res) => {
             conversationId: req.body.conversationId,
             content: req.body.content,
             identity: req.body.identity,
+            // §8.2 — the IP the blocklist checks against.
+            ip: req.ip,
         });
         return res.status(status).json(json);
     } catch (error) {

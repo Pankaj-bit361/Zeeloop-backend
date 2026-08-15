@@ -20,6 +20,13 @@ const generalFunctions = require("../utilFunctions/generalFunctions");
 const themeDerivation = require("../utilFunctions/themeDerivation");
 const usageFunctions = require("../billing/usageFunctions");
 const agentFunctions = require("../agent/agentFunctions");
+const attributeFunctions = require("../config/attributeFunctions");
+const emailFunctions = require("../email/emailFunctions");
+const outboundWebhookFunctions = require("../webhook/outboundWebhookFunctions");
+const securityFunctions = require("../security/securityFunctions");
+const expansionFunctions = require("../expansion/expansionFunctions");
+const widgetConfigFunctions = require("../widget/widgetConfigFunctions");
+const responseComponentFunctions = require("../widget/responseComponentFunctions");
 
 // Shown to end users on a workspace that has hit its conversation quota or cost
 // ceiling. Deliberately says nothing about billing: the visitor is the
@@ -30,17 +37,11 @@ const actionFunctions = require("../action/actionFunctions");
 
 class ChatFunctions {
     // POST /api/widget/bootstrap — org by publicKey, widget config + a conversation.
-    // Default composable home screen — used when the org hasn't customized.
-    _defaultHomeSections() {
-        return [
-            { id: "trust", type: "trust_badge", enabled: true, order: 0, config: {} },
-            { id: "ask", type: "ask_question", enabled: true, order: 1, config: {} },
-            { id: "recent", type: "recent_conversation", enabled: true, order: 2, config: {} },
-            { id: "search", type: "article_search", enabled: true, order: 3, config: {} },
-        ];
-    }
-
-    async bootstrap({ publicKey, conversationId, identity, accentColor }) {
+    //
+    // The home screen default now lives in widgetConfigFunctions alongside the
+    // rest of the §4.1 logic, so the dashboard's idea of "the default sections"
+    // and the widget's cannot drift apart.
+    async bootstrap({ publicKey, conversationId, identity, accentColor, pageUrl, pageSettings, origin }) {
         console.log("ChatFunctions:bootstrap: publicKey:", publicKey);
         try {
             if (!publicKey) {
@@ -83,6 +84,26 @@ class ChatFunctions {
                 };
             }
 
+            // §1.6 step 5 — the install verification signal. Fire-and-forget:
+            // the wizard polls for it, and the widget must not wait on a write
+            // it does not read.
+            this._recordPing({ orgId: org.orgId, origin }).catch((error) => {
+                console.error("ChatFunctions:bootstrap: ping failed");
+                console.error(error.message);
+            });
+
+            // §4.3 — launcher visibility, decided in one place with a stated
+            // reason. The widget renders `launcher.show`; the reason string is
+            // what answers "why is it not showing on this page" without a
+            // support ticket.
+            const launcher = await widgetConfigFunctions.shouldShowLauncher({
+                org,
+                pageUrl,
+                identityVerified,
+                endUser,
+                pageSettings,
+            });
+
             return {
                 status: 200,
                 json: {
@@ -98,10 +119,19 @@ class ChatFunctions {
                             ? themeDerivation.deriveThemes(accentColor)
                             : org.widget.themeTokens || themeDerivation.deriveThemes(org.widget.accentColor || null),
                         configVersion: org.widget.configVersion || 1,
-                        homeSections:
-                            Array.isArray(org.widget.homeSections) && org.widget.homeSections.length
-                                ? org.widget.homeSections
-                                : this._defaultHomeSections(),
+                        homeSections: widgetConfigFunctions.resolveHomeSections({ org }),
+                        // §4.4 — the 8px spacing scale, served rather than
+                        // hardcoded in the embed, so a visual change reaches
+                        // deployed widgets without anyone republishing a script.
+                        spacing: widgetConfigFunctions.SPACING_TOKENS,
+                        // §4.5 — computed from luminance for a solid background,
+                        // and carrying a warning when the background is a
+                        // gradient and needs a manual choice.
+                        headerText: widgetConfigFunctions.resolveHeaderTextColor({ org }),
+                        // §4.2 — `{first_name}` already substituted, and the
+                        // whole clause collapsed when there is no name.
+                        welcome: widgetConfigFunctions.renderWelcome({ org, endUser, identityVerified }),
+                        launcher,
                         conversationId: conversation ? conversation.conversationId : null,
                         conversationStatus: conversation ? conversation.status : null,
                         identityVerified,
@@ -121,7 +151,7 @@ class ChatFunctions {
     // POST /api/widget/messages — the widget's message endpoint; runs the pipeline.
     // conversationId is optional: the first message of a fresh thread creates the
     // conversation lazily, so opening the widget never spawns empty rows.
-    async sendMessage({ publicKey, conversationId, content, identity }) {
+    async sendMessage({ publicKey, conversationId, content, identity, ip }) {
         console.log("ChatFunctions:sendMessage: conversationId:", conversationId);
         try {
             if (!publicKey || !content) {
@@ -136,6 +166,35 @@ class ChatFunctions {
             }
 
             const { endUser, identityVerified } = await this._resolveIdentity({ org, identity });
+
+            // §8.2 — the blocklist. Checked before the message is stored and
+            // before any model call, because the point is to stop spending money
+            // on someone the workspace has already decided is abusive.
+            //
+            // The visitor gets the same graceful message a quota-exceeded
+            // workspace gives, not "you are blocked": telling an abuser exactly
+            // what happened tells them what to change.
+            const blocked = await expansionFunctions.checkBlocked({
+                orgId: org.orgId,
+                email: identity && identity.email,
+                ip,
+            });
+            if (blocked.blocked) {
+                console.log("ChatFunctions:sendMessage: blocked by", blocked.type, "for orgId:", org.orgId);
+                return {
+                    status: 200,
+                    json: {
+                        success: true,
+                        data: {
+                            conversationId: conversationId || null,
+                            message: { role: MessageRole.ASSISTANT, content: DEGRADED_REPLY },
+                            outcome: TurnOutcome.BLOCKED,
+                            awaitingConfirmation: false,
+                            degraded: true,
+                        },
+                    },
+                };
+            }
 
             let conversation = conversationId
                 ? await Conversation.findOne({ orgId: org.orgId, conversationId })
@@ -242,6 +301,46 @@ class ChatFunctions {
             }
             await conversation.save();
 
+            // §2.3 — attribute detection runs after the reply is written and is
+            // deliberately NOT awaited. It is worth a small-model call to keep
+            // the inbox's columns populated; it is not worth adding that call's
+            // latency to every customer's answer, and a classifier outage must
+            // not be able to fail a turn that already succeeded.
+            attributeFunctions
+                .detectForTurn({
+                    orgId: org.orgId,
+                    conversationId,
+                    gateSentiment: turn.sentiment || null,
+                    context: { identityVerified, turnCount: conversation.turnCount },
+                })
+                .catch((error) => {
+                    console.error("ChatFunctions:sendMessage: attribute detection failed");
+                    console.error(error);
+                    generalFunctions.captureException(error);
+                });
+
+            // §4.8 — escalation notice to the team. Same reasoning: an email
+            // provider being slow must not hold the widget's response open.
+            if (turn.escalate || turn.outcome === TurnOutcome.ESCALATED) {
+                emailFunctions
+                    .sendEscalationNotice({ org, conversationId, lastMessage: content, rule: turn.escalationRule || null })
+                    .catch((error) => {
+                        console.error("ChatFunctions:sendMessage: escalation notice failed");
+                        console.error(error);
+                        generalFunctions.captureException(error);
+                    });
+            }
+
+            // Outbound webhooks (§5.6), for customers wiring Zealoop into their
+            // own systems. Fire-and-forget for the same reason.
+            outboundWebhookFunctions
+                .dispatchForTurn({ org, conversation, turn, isNewConversation })
+                .catch((error) => {
+                    console.error("ChatFunctions:sendMessage: webhook dispatch failed");
+                    console.error(error);
+                    generalFunctions.captureException(error);
+                });
+
             // Metered after the turn completes, never before — a turn that threw
             // should not be billed to the customer.
             await usageFunctions.recordTurn({
@@ -261,6 +360,12 @@ class ChatFunctions {
                         message: assistantMessage,
                         outcome: turn.outcome,
                         awaitingConfirmation: !!turn.halted,
+                        // §4.6 — the rich response contract. Built from the
+                        // turn's real state by code that knows a guard actually
+                        // fired, never emitted by the model. A widget that does
+                        // not understand a component renders its fallbackText,
+                        // so old embeds keep working.
+                        components: responseComponentFunctions.fromTurn({ turn }).components,
                     },
                 },
             };
@@ -746,13 +851,22 @@ class ChatFunctions {
         }
 
         let identityVerified = false;
+        let usedPreviousSecret = false;
         if (identity.signature) {
-            const widgetSecret = generalFunctions.decrypt(org.widgetSecret);
-            identityVerified = generalFunctions.verifyIdentityHmac({
-                widgetSecret,
+            // §8.4 — verified through securityFunctions rather than inline, so
+            // the rotation grace window (old secret still accepted for a bounded
+            // period) is honoured everywhere identity is checked rather than in
+            // whichever call sites remembered.
+            const verdict = securityFunctions.verifyIdentitySignature({
+                org,
                 email: identity.email,
                 signature: identity.signature,
             });
+            identityVerified = verdict.verified;
+            usedPreviousSecret = verdict.usedPrevious;
+            if (usedPreviousSecret) {
+                console.log("ChatFunctions:_resolveIdentity: verified with the PREVIOUS secret, orgId:", org.orgId);
+            }
         }
 
         const endUser = await EndUser.findOneAndUpdate(
@@ -766,12 +880,28 @@ class ChatFunctions {
                 },
                 $setOnInsert: {
                     endUserId: generalFunctions.generateId(IdPrefix.END_USER),
+                    firstSeenAt: new Date(),
                 },
             },
             { new: true, upsert: true }
         );
 
-        return { endUser, identityVerified };
+        return { endUser, identityVerified, usedPreviousSecret };
+    }
+
+    // §1.6 step 5 — proof the widget actually loaded, and from where.
+    //
+    // Upserted per (org, origin) rather than appended per page view: a busy
+    // customer site would otherwise write a row per load forever, to answer a
+    // question that only needs one row per site.
+    async _recordPing({ orgId, origin }) {
+        const WidgetPing = require("../../models/org/widgetPing");
+        await WidgetPing.updateOne(
+            { orgId, origin: origin || null },
+            { $set: { lastSeenAt: new Date() }, $inc: { hits: 1 }, $setOnInsert: { firstSeenAt: new Date() } },
+            { upsert: true }
+        );
+        return { success: true };
     }
 }
 

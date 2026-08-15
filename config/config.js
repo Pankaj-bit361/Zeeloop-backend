@@ -138,6 +138,73 @@ module.exports = {
     // not unlock anything.
     PII_REDACT_MODEL_EMAIL: process.env.PII_REDACT_MODEL_EMAIL === "true",
 
+    // ── Transactional email (§0.5, §4.8) ─────────────────────────────
+    // No key means every send is logged with delivered:false and the body
+    // intact, rather than crashing or silently vanishing — same rule as Sentry.
+    EMAIL_API_KEY: process.env.EMAIL_API_KEY || "",
+    EMAIL_API_BASE_URL: process.env.EMAIL_API_BASE_URL || "https://api.resend.com",
+    EMAIL_FROM: process.env.EMAIL_FROM || "Zealoop <notifications@zealoop.com>",
+    // Inbound address pattern for the email channel. `{token}` is replaced with
+    // the workspace's inbound token, so each workspace gets its own address on
+    // one verified domain rather than needing a domain each.
+    EMAIL_INBOUND_DOMAIN: process.env.EMAIL_INBOUND_DOMAIN || "in.zealoop.com",
+    // Shared secret on the inbound parse endpoint. Without it that endpoint is
+    // an unauthenticated way to inject messages into any workspace, so it
+    // refuses to accept anything when unset.
+    EMAIL_INBOUND_SECRET: process.env.EMAIL_INBOUND_SECRET || "",
+    // Trial and dunning crons. Both are idempotent via EmailLog's unique index.
+    LIFECYCLE_CRON: process.env.LIFECYCLE_CRON || "0 9 * * *",
+
+    // ── Setup wizard and brand import (§1.6, §1.7) ───────────────────
+    BRANDFETCH_API_KEY: process.env.BRANDFETCH_API_KEY || "",
+    BRANDFETCH_BASE_URL: process.env.BRANDFETCH_BASE_URL || "https://api.brandfetch.io/v2",
+
+    // ── File ingest (§1.2) ───────────────────────────────────────────
+    // Bytes, before base64 expansion. Uploads arrive as base64 in a JSON body,
+    // so JSON_BODY_LIMIT has to be comfortably above this — base64 costs ~33%.
+    MAX_UPLOAD_BYTES: Number(process.env.MAX_UPLOAD_BYTES || 10 * 1024 * 1024),
+
+    // ── Crawl worker (§1.3) ──────────────────────────────────────────
+    // In-process worker, polled on this interval. Not BullMQ: Redis is not in
+    // this stack, and adding an operational dependency to get a queue this
+    // shape would be a bigger change than the feature.
+    CRAWL_WORKER_ENABLED: process.env.CRAWL_WORKER_ENABLED !== "false",
+    CRAWL_WORKER_INTERVAL_MS: Number(process.env.CRAWL_WORKER_INTERVAL_MS || 5000),
+    CRAWL_MAX_ATTEMPTS: Number(process.env.CRAWL_MAX_ATTEMPTS || 3),
+    // How long a job may be claimed before another worker may take it. Covers
+    // the case where the instance holding it died mid-crawl.
+    CRAWL_LEASE_MS: Number(process.env.CRAWL_LEASE_MS || 10 * 60 * 1000),
+
+    // ── Evaluation (§3) ──────────────────────────────────────────────
+    // Quality grading and recommendation clustering both run on cron so they
+    // never touch a turn's latency.
+    QUALITY_CRON: process.env.QUALITY_CRON || "*/30 * * * *",
+    QUALITY_BATCH_SIZE: Number(process.env.QUALITY_BATCH_SIZE || 25),
+    ATTRIBUTION_CRON: process.env.ATTRIBUTION_CRON || "*/20 * * * *",
+    // Cosine distance below which two below-threshold queries are the same gap.
+    GAP_CLUSTER_THRESHOLD: Number(process.env.GAP_CLUSTER_THRESHOLD || 0.18),
+    // Simulations and batch tests run turns in parallel; this caps how many at
+    // once so one run cannot saturate the model provider for live traffic.
+    EVAL_CONCURRENCY: Number(process.env.EVAL_CONCURRENCY || 3),
+    SIMULATION_MAX_TURNS: Number(process.env.SIMULATION_MAX_TURNS || 6),
+
+    // ── Security (§8.4) ──────────────────────────────────────────────
+    // How long a rotated widget secret keeps working, so a customer can deploy
+    // their new signing code without a window where identify() fails.
+    SECRET_ROTATION_GRACE_HOURS: Number(process.env.SECRET_ROTATION_GRACE_HOURS || 48),
+    // Only ever true in local development: it disables the https-and-public-host
+    // check on outbound webhook URLs, which otherwise makes them an SSRF
+    // primitive pointed at our own network.
+    ALLOW_INSECURE_WEBHOOKS: process.env.ALLOW_INSECURE_WEBHOOKS === "true",
+
+    // ── Structured logging (§8.3) ────────────────────────────────────
+    // "json" routes every console.* call through pino so New Relic's log
+    // forwarder can see it — it forwards pino/winston/bunyan and ignores
+    // console entirely. "pretty" leaves console alone, which is what local
+    // development wants.
+    LOG_FORMAT: process.env.LOG_FORMAT || (process.env.NODE_ENV === "production" ? "json" : "pretty"),
+    LOG_LEVEL: process.env.LOG_LEVEL || "info",
+
     CORS_DASHBOARD_ORIGINS: (process.env.CORS_DASHBOARD_ORIGINS || "http://localhost:5173").split(","),
     JSON_BODY_LIMIT: "1mb",
     RESOLUTION_CRON: "*/15 * * * *",

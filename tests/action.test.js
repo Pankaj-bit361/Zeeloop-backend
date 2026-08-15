@@ -1,7 +1,21 @@
 "use strict";
 const { test, describe, before, after } = require("node:test");
 const assert = require("node:assert/strict");
-const { get, post, patch, del, devLogin, authHeader, SEED_ORG_ID, randomSuffix } = require("./helpers/client");
+const { get, post, patch, del, devLogin, authHeader, SEED_ORG_ID, randomSuffix, BASE_URL } = require("./helpers/client");
+
+// Action test calls make a REAL HTTP request — that is the point of the feature,
+// and mocking it would test nothing. They used to point at httpbin.org, which
+// made this suite fail whenever a third party was having a bad day (it returned
+// 503 on 15 Aug 2026 and took four tests with it).
+//
+// Pointing them at THIS server instead keeps the real network round trip while
+// removing the external dependency: if the backend under test is down, these
+// tests were never going to run anyway. /health always answers 200 and
+// /api/org/... without a token always answers 401, which is the 2xx and the
+// non-2xx this suite needs.
+const OK_URL = `${BASE_URL}/health`;
+const FAILING_URL = `${BASE_URL}/api/org/nope/actions`;
+const OTHER_OK_URL = `${BASE_URL}/status`;
 
 let AUTH_A;
 const createdActionIds = [];
@@ -62,7 +76,7 @@ describe("POST /api/org/:orgId/actions — accessType is required, no default", 
                 name: `Probe Action ${randomSuffix()}`,
                 description: "Created by automated test",
                 accessType: "READ",
-                urlTemplate: "https://httpbin.org/status/200",
+                urlTemplate: OK_URL,
                 requiresIdentity: false,
                 requiresConfirmation: false,
             },
@@ -84,7 +98,7 @@ describe("The full action guard ladder: test-required -> enable -> visible; url 
                 name: `Guard Ladder ${randomSuffix()}`,
                 description: "Exercises the guard ladder",
                 accessType: "READ",
-                urlTemplate: "https://httpbin.org/status/200",
+                urlTemplate: OK_URL,
                 requiresIdentity: false,
                 requiresConfirmation: false,
             },
@@ -115,7 +129,7 @@ describe("The full action guard ladder: test-required -> enable -> visible; url 
     test("changing urlTemplate resets lastTestStatus to null — the action goes invisible again", async () => {
         const result = await patch(`/api/org/${SEED_ORG_ID}/actions/${actionId}`, {
             headers: AUTH_A,
-            body: { urlTemplate: "https://httpbin.org/status/201" },
+            body: { urlTemplate: OTHER_OK_URL },
         });
         assert.equal(result.status, 200);
         assert.equal(result.json.data.lastTestStatus, null, "URL change must reset lastTestStatus");
@@ -123,7 +137,7 @@ describe("The full action guard ladder: test-required -> enable -> visible; url 
     });
 
     test("a test call against a failing endpoint sets lastTestStatus to FAIL, not PASS", async () => {
-        await patch(`/api/org/${SEED_ORG_ID}/actions/${actionId}`, { headers: AUTH_A, body: { urlTemplate: "https://httpbin.org/status/500" } });
+        await patch(`/api/org/${SEED_ORG_ID}/actions/${actionId}`, { headers: AUTH_A, body: { urlTemplate: FAILING_URL } });
         const result = await post(`/api/org/${SEED_ORG_ID}/actions/${actionId}/test`, { headers: AUTH_A, body: {} });
         assert.equal(result.status, 200);
         assert.equal(result.json.data.lastTestStatus, "FAIL");

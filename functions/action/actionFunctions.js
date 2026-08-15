@@ -1,6 +1,15 @@
 const Action = require("../../models/action/action");
 const ActionExecution = require("../../models/action/actionExecution");
-const { AccessType, ExecutionStatus, BlockReason, TestStatus, IdPrefix } = require("../../config/enums");
+const {
+    AccessType,
+    ExecutionStatus,
+    BlockReason,
+    TestStatus,
+    IdPrefix,
+    ActionKind,
+    CredentialType,
+    DataInputSource,
+} = require("../../config/enums");
 const generalFunctions = require("../utilFunctions/generalFunctions");
 
 class ActionFunctions {
@@ -221,8 +230,33 @@ class ActionFunctions {
         return null;
     }
 
-    async _callEndpoint({ action, args }) {
+    async _callEndpoint({ action, args, identity }) {
         const start = Date.now();
+
+        // §5.3 — mock response. Lets an action be configured, wired into a
+        // procedure and tested before the API behind it exists.
+        //
+        // The result says `mocked: true` and _recordExecution stores it, so a
+        // mocked call is never mistaken for a real one in the audit trail. An
+        // action that silently returned fabricated data to a customer would be
+        // far worse than one that does not work yet.
+        if (action.mockEnabled) {
+            console.log("ActionFunctions:_callEndpoint: returning mock response for", action.actionId);
+            return {
+                success: true,
+                httpStatus: 200,
+                body: action.mockResponse ?? {},
+                url: action.urlTemplate || `mcp://${action.mcp && action.mcp.toolName}`,
+                durationMs: Date.now() - start,
+                mocked: true,
+            };
+        }
+
+        // §5.2 — MCP actions call a tool on the customer's own MCP server.
+        if (action.kind === ActionKind.MCP) {
+            return this._callMcp({ action, args, start });
+        }
+
         try {
             let url = action.urlTemplate;
             const bodyArgs = {};
@@ -236,8 +270,27 @@ class ActionFunctions {
             }
 
             const headers = { "content-type": "application/json", ...(action.headers || {}) };
-            if (action.secret) {
-                headers.authorization = `Bearer ${generalFunctions.decrypt(action.secret)}`;
+            const authorised = await this._applyCredential({ action, headers });
+            if (!authorised.success) {
+                return { success: false, error: authorised.error, durationMs: Date.now() - start };
+            }
+
+            // §5.3 — the verified-identity header. Signed with the widget
+            // secret so the customer's backend can distinguish "Zealoop
+            // verified this person" from "someone typed this address into a
+            // chat box". An unsigned header would be worth nothing: anything
+            // that can reach their endpoint could set it.
+            if (action.sendIdentityHeader && identity && identity.email && identity.verified) {
+                const Org = require("../../models/org/org");
+                const org = await Org.findOne({ orgId: action.orgId }).select("widgetSecret").lean();
+                const secret = org ? generalFunctions.safeDecrypt(org.widgetSecret) : null;
+                if (secret) {
+                    headers["zealoop-identity"] = identity.email;
+                    headers["zealoop-identity-signature"] = generalFunctions.createIdentityHmac({
+                        widgetSecret: secret,
+                        email: identity.email,
+                    });
+                }
             }
 
             const method = (action.method || "GET").toUpperCase();
@@ -265,6 +318,227 @@ class ActionFunctions {
         } catch (error) {
             return { success: false, error: error.message, durationMs: Date.now() - start };
         }
+    }
+
+    // §5.2 — MCP over the Streamable HTTP transport. One JSON-RPC POST to
+    // `tools/call`, which is the whole protocol surface an action needs: we are
+    // a client calling one named tool with named arguments, not a host managing
+    // a session.
+    //
+    // Worth building over adding REST config forms one vendor at a time: Stripe,
+    // Linear and Shopify all publish MCP servers, so one integration reaches all
+    // of a customer's existing tools rather than one of them.
+    async _callMcp({ action, args, start }) {
+        try {
+            const serverUrl = action.mcp && action.mcp.serverUrl;
+            const toolName = action.mcp && action.mcp.toolName;
+            if (!serverUrl || !toolName) {
+                return { success: false, error: "This MCP action is missing its server URL or tool name", durationMs: Date.now() - start };
+            }
+
+            const headers = {
+                "content-type": "application/json",
+                // Streamable HTTP servers may answer with either, so accept both.
+                accept: "application/json, text/event-stream",
+                ...(action.headers || {}),
+            };
+            const authorised = await this._applyCredential({ action, headers });
+            if (!authorised.success) {
+                return { success: false, error: authorised.error, durationMs: Date.now() - start };
+            }
+
+            const response = await fetch(serverUrl, {
+                method: "POST",
+                headers,
+                body: JSON.stringify({
+                    jsonrpc: "2.0",
+                    id: generalFunctions.generateId("rpc"),
+                    method: "tools/call",
+                    params: { name: toolName, arguments: args || {} },
+                }),
+            });
+
+            const raw = await response.text();
+            if (!response.ok) {
+                return {
+                    success: false,
+                    httpStatus: response.status,
+                    error: `MCP server returned ${response.status}`,
+                    body: raw.slice(0, 500),
+                    url: serverUrl,
+                    durationMs: Date.now() - start,
+                };
+            }
+
+            const payload = this._parseMcpPayload(raw);
+            if (!payload) {
+                return { success: false, error: "MCP server returned an unreadable response", url: serverUrl, durationMs: Date.now() - start };
+            }
+
+            // JSON-RPC signals failure in the body with a 200 status, so
+            // response.ok is not the whole answer here.
+            if (payload.error) {
+                return {
+                    success: false,
+                    httpStatus: response.status,
+                    error: payload.error.message || "MCP tool call failed",
+                    body: payload.error,
+                    url: serverUrl,
+                    durationMs: Date.now() - start,
+                };
+            }
+
+            const result = payload.result || {};
+            // isError is how MCP reports a tool that ran and failed, as opposed
+            // to a call that could not be made. Both are failures to us.
+            if (result.isError) {
+                return {
+                    success: false,
+                    httpStatus: response.status,
+                    error: this._mcpText(result) || "The tool reported an error",
+                    body: result,
+                    url: serverUrl,
+                    durationMs: Date.now() - start,
+                };
+            }
+
+            return {
+                success: true,
+                httpStatus: response.status,
+                // structuredContent when the server provides it, the text
+                // blocks otherwise — the model reads this either way.
+                body: result.structuredContent || this._mcpText(result) || result,
+                url: serverUrl,
+                durationMs: Date.now() - start,
+            };
+        } catch (error) {
+            return { success: false, error: error.message, durationMs: Date.now() - start };
+        }
+    }
+
+    // Streamable HTTP may answer with a plain JSON body or with SSE frames.
+    _parseMcpPayload(raw) {
+        try {
+            return JSON.parse(raw);
+        } catch (error) {
+            // SSE: one or more `data:` lines. The last complete one is the
+            // response to our call.
+            const frames = String(raw)
+                .split("\n")
+                .filter((line) => line.startsWith("data:"))
+                .map((line) => line.slice(5).trim())
+                .filter(Boolean);
+            for (let index = frames.length - 1; index >= 0; index--) {
+                try {
+                    return JSON.parse(frames[index]);
+                } catch (frameError) {
+                    continue;
+                }
+            }
+            return null;
+        }
+    }
+
+    _mcpText(result) {
+        return (result.content || [])
+            .filter((block) => block && block.type === "text")
+            .map((block) => block.text)
+            .join("\n")
+            .trim();
+    }
+
+    // §5.3 — resolves a stored Credential onto the outgoing headers. Falls back
+    // to the action's own legacy `secret` field, so actions created before the
+    // credential store existed keep working unchanged.
+    async _applyCredential({ action, headers }) {
+        try {
+            if (action.credentialId) {
+                const { Credential } = require("../../models/org/expansion");
+                const credential = await Credential.findOne({
+                    orgId: action.orgId,
+                    credentialId: action.credentialId,
+                }).lean();
+                if (!credential) {
+                    return { success: false, error: "The credential this action uses no longer exists" };
+                }
+
+                const secret = generalFunctions.safeDecrypt(credential.secret);
+                if (!secret) {
+                    // A rotated ENCRYPTION_KEY makes every stored secret
+                    // unreadable. Saying so beats a 401 from the customer's API
+                    // that sends everyone hunting in the wrong place.
+                    return { success: false, error: "That credential could not be decrypted — re-enter it in Settings" };
+                }
+
+                if (credential.type === CredentialType.BEARER) {
+                    headers.authorization = `Bearer ${secret}`;
+                } else if (credential.type === CredentialType.API_KEY_HEADER) {
+                    headers[credential.headerName || "x-api-key"] = secret;
+                } else if (credential.type === CredentialType.BASIC) {
+                    headers.authorization = `Basic ${Buffer.from(`${credential.username}:${secret}`).toString("base64")}`;
+                }
+                return { success: true };
+            }
+
+            if (action.secret) {
+                const secret = generalFunctions.safeDecrypt(action.secret);
+                if (!secret) return { success: false, error: "This action's secret could not be decrypted — re-enter it" };
+                headers.authorization = `Bearer ${secret}`;
+            }
+            return { success: true };
+        } catch (error) {
+            console.error("ActionFunctions:_applyCredential: Catch block");
+            console.error(error);
+            generalFunctions.captureException(error);
+            return { success: false, error: "Could not apply this action's credentials" };
+        }
+    }
+
+    // §5.3 — data inputs. Which declared inputs are still missing, and what to
+    // ask for. Returned to the pipeline so the agent asks the customer rather
+    // than the model inventing an order id.
+    resolveDataInputs({ action, args, context }) {
+        const inputs = action.dataInputs || [];
+        if (inputs.length === 0) return { ready: true, missing: [], resolved: args || {} };
+
+        const resolved = { ...(args || {}) };
+        const missing = [];
+
+        for (const input of inputs) {
+            if (resolved[input.name] !== undefined && resolved[input.name] !== null && resolved[input.name] !== "") continue;
+
+            if (input.source === DataInputSource.IDENTITY && context && context.email) {
+                resolved[input.name] = context.email;
+                continue;
+            }
+            if (input.source === DataInputSource.PRIOR_ACTION && context && context.priorResults && input.path) {
+                const value = input.path.split(".").reduce((node, key) => (node == null ? undefined : node[key]), context.priorResults);
+                if (value !== undefined) {
+                    resolved[input.name] = value;
+                    continue;
+                }
+            }
+            if (input.source === DataInputSource.TABLE && context && context.tableValues && input.path) {
+                const value = context.tableValues[input.path];
+                if (value !== undefined) {
+                    resolved[input.name] = value;
+                    continue;
+                }
+            }
+
+            if (input.required) {
+                missing.push({
+                    name: input.name,
+                    source: input.source,
+                    // The configured question, not one the model makes up —
+                    // otherwise "what is your order id" becomes "please provide
+                    // your customer reference number".
+                    prompt: input.prompt || `What is the ${input.label || input.name}?`,
+                });
+            }
+        }
+
+        return { ready: missing.length === 0, missing, resolved };
     }
 
     async _recordExecution({ orgId, actionId, conversationId, endUserId, status, blockReason, request, response }) {

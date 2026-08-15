@@ -11,6 +11,11 @@ const chunkSchema = new mongoose.Schema(
         headingPath: { type: [String], default: [] },
         tokenCount: { type: Number, default: 0 },
         position: { type: Number, default: 0 },
+        // §1.4 — which document within the source this chunk came from: the URL
+        // for a crawled page, the filename for a file. Change detection deletes
+        // and re-embeds by this key, so a re-sync only touches the pages that
+        // actually changed.
+        documentKey: { type: String, default: null, index: true },
     },
     {
         timestamps: true,

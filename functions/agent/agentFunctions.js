@@ -6,6 +6,8 @@ const {
     GateIntent,
     GateSentiment,
     ToolCallStatus,
+    ConversationChannel,
+    Channel,
 } = require("../../config/enums");
 const Chunk = require("../../models/knowledge/chunk");
 const Table = require("../../models/table/table");
@@ -17,12 +19,14 @@ const generalFunctions = require("../utilFunctions/generalFunctions");
 const redactionFunctions = require("../utilFunctions/redactionFunctions");
 const llmFunctions = require("../utilFunctions/llmFunctions");
 const actionFunctions = require("../action/actionFunctions");
+const guidanceFunctions = require("../config/guidanceFunctions");
+const procedureFunctions = require("../procedure/procedureFunctions");
 
 class AgentFunctions {
     // The whole pipeline. Six stages, order is the contract. Returns
     // { success, reply, citations, toolCalls, outcome, halted }.
     // The TurnTrace is written on EVERY turn, including blocked and failed ones.
-    async runTurn({ org, conversation, endUser, identityVerified, rawMessage, history }) {
+    async runTurn({ org, conversation, endUser, identityVerified, rawMessage, history, channel }) {
         console.log("AgentFunctions:runTurn: orgId:", org.orgId, "conversationId:", conversation.conversationId);
 
         const trace = {
@@ -43,6 +47,10 @@ class AgentFunctions {
             grounded: null,
             answersQuery: null,
             unsupportedClaims: [],
+            appliedRuleIds: [],
+            escalationRuleId: null,
+            segmentIds: [],
+            channel: channel || ConversationChannel.CHAT,
             outcome: TurnOutcome.ERROR,
             latencyMs: { gate: 0, rewrite: 0, retrieve: 0, rerank: 0, generate: 0, validate: 0 },
             costUsd: 0,
@@ -50,7 +58,7 @@ class AgentFunctions {
 
         let result;
         try {
-            result = await this._runPipeline({ org, conversation, endUser, identityVerified, rawMessage, history, trace });
+            result = await this._runPipeline({ org, conversation, endUser, identityVerified, rawMessage, history, channel, trace });
         } catch (error) {
             console.error("AgentFunctions:runTurn: Catch block");
             console.error(error);
@@ -71,12 +79,18 @@ class AgentFunctions {
         }
 
         result.costUsd = trace.costUsd;
+        result.inputTokens = trace.inputTokens;
+        result.outputTokens = trace.outputTokens;
+        // Handed back so attribute detection can reuse the Gate's sentiment
+        // instead of paying a second model call to re-derive it (§2.3).
+        result.sentiment = trace.gateSentiment || null;
+        result.traceId = trace.traceId;
         return result;
     }
 
     // Private Helper Functions
 
-    async _runPipeline({ org, conversation, endUser, identityVerified, rawMessage, history, trace }) {
+    async _runPipeline({ org, conversation, endUser, identityVerified, rawMessage, history, channel, trace }) {
         // Stage 0 — gate (fail open)
         const gateStart = Date.now();
         const gate = await this._runGate({ rawMessage, trace });
@@ -85,6 +99,19 @@ class AgentFunctions {
         trace.gateLanguage = gate.language;
         trace.gateSentiment = gate.sentiment;
         trace.gateSafe = gate.safe;
+
+        // Stage 0b — configuration (§2). Loaded after the gate because half the
+        // condition fields — sentiment, intent, language — are the gate's
+        // output, and an escalation rule that cannot read them would be limited
+        // to turn counts.
+        const configContext = this._buildConditionContext({ org, conversation, endUser, identityVerified, gate });
+        const guidance = await guidanceFunctions.loadForTurn({
+            orgId: org.orgId,
+            context: configContext,
+            channel: channel === ConversationChannel.EMAIL ? Channel.EMAIL : Channel.CHAT,
+        });
+        trace.appliedRuleIds = guidance.appliedRuleIds;
+        trace.segmentIds = guidance.segmentIds;
 
         if (!gate.safe) {
             trace.outcome = TurnOutcome.BLOCKED;
@@ -108,6 +135,25 @@ class AgentFunctions {
                 outcome: TurnOutcome.ESCALATED,
                 halted: false,
                 escalate: true,
+            };
+        }
+
+        // A deterministic escalation rule matched (§2.2). Checked before
+        // retrieval and generation, not after: the whole point of the
+        // deterministic half is that it does not depend on what the model
+        // decides, and running the pipeline first would spend the tokens anyway.
+        if (guidance.escalation.triggered) {
+            trace.outcome = TurnOutcome.ESCALATED;
+            trace.escalationRuleId = guidance.escalation.rule.escalationRuleId;
+            return {
+                success: true,
+                reply: `I'm bringing in the ${org.name} team on this one — they'll pick it up right here with everything you've told me.`,
+                citations: [],
+                toolCalls: [],
+                outcome: TurnOutcome.ESCALATED,
+                halted: false,
+                escalate: true,
+                escalationRule: guidance.escalation.rule,
             };
         }
 
@@ -173,6 +219,7 @@ class AgentFunctions {
             tableContext,
             availableActions,
             procedure,
+            guidance,
             trace,
         });
         trace.latencyMs.generate = Date.now() - generateStart;
@@ -480,14 +527,11 @@ class AgentFunctions {
         return Action.find({ orgId, enabled: true, lastTestStatus: "PASS" }).lean();
     }
 
+    // §5.4 — keyword first, then intent classification only when a procedure
+    // actually wants it. See procedureFunctions.selectForTurn.
     async _loadProcedures({ orgId, query }) {
-        const procedures = await Procedure.find({ orgId, enabled: true }).lean();
-        const queryLower = query.toLowerCase();
-        return (
-            procedures.find((procedure) =>
-                (procedure.keywords || []).some((keyword) => queryLower.includes(keyword.toLowerCase()))
-            ) || null
-        );
+        const selected = await procedureFunctions.selectForTurn({ orgId, query });
+        return selected.procedure || null;
     }
 
     async _runRerank({ query, candidates, trace }) {
@@ -516,8 +560,16 @@ class AgentFunctions {
         }
     }
 
-    async _runGenerate({ org, conversation, endUser, identityVerified, query, rawMessage, history, topChunks, tableContext, availableActions, procedure, trace }) {
-        const system = this._buildSystemPrompt({ org, topChunks, tableContext, availableActions, procedure, identityVerified });
+    async _runGenerate({ org, conversation, endUser, identityVerified, query, rawMessage, history, topChunks, tableContext, availableActions, procedure, guidance, trace }) {
+        const { prompt: system, maxTokens } = this._buildSystemPrompt({
+            org,
+            topChunks,
+            tableContext,
+            availableActions,
+            procedure,
+            identityVerified,
+            guidance,
+        });
         const messages = [
             ...(history || []).slice(-10).map((message) => ({
                 role: message.role === "USER" ? "user" : "assistant",
@@ -534,7 +586,10 @@ class AgentFunctions {
                 system,
                 schemaHint: `{"type": "answer", "text": string, "citationChunkIds": string[]} OR {"type": "clarify", "text": string} OR {"type": "tool_call", "actionId": string, "args": object}`,
                 messages,
-                maxTokens: config.MAX_OUTPUT_TOKENS,
+                // Comes from the workspace's answer-length setting (§2.8). A
+                // model told to be concise and handed a thousand tokens uses
+                // them, so the instruction and the ceiling move together.
+                maxTokens: maxTokens || config.MAX_OUTPUT_TOKENS,
             });
             this._addUsage(trace, config.LARGE_MODEL, result);
             const output = result.json;
@@ -686,11 +741,25 @@ class AgentFunctions {
         return `I'm not able to do that from chat just yet — I've flagged this conversation for the ${org.name} team.`;
     }
 
-    _buildSystemPrompt({ org, topChunks, tableContext, availableActions, procedure, identityVerified }) {
+    // Returns { prompt, maxTokens } rather than a bare string: the answer-length
+    // setting decides both, and splitting them across two call sites is how they
+    // drift apart.
+    //
+    // Section order is fixed and deliberate. Identity and tone first because
+    // they colour everything after; guidance next because it constrains how the
+    // knowledge is used; knowledge, data and actions last because they are the
+    // material rather than the instructions.
+    _buildSystemPrompt({ org, topChunks, tableContext, availableActions, procedure, identityVerified, guidance }) {
         const parts = [];
         parts.push(
             `You are ${org.agent.name}, the customer support agent for ${org.name}. Answer ONLY from the context below. If the context does not contain the answer, say so plainly. Never invent facts, prices, or policies.`
         );
+
+        const identity = guidanceFunctions.composeIdentityAndContext({ org });
+        if (identity.prompt) parts.push(identity.prompt);
+
+        if (guidance && guidance.guidancePrompt) parts.push(guidance.guidancePrompt);
+        if (guidance && guidance.escalationPrompt) parts.push(guidance.escalationPrompt);
 
         if (topChunks.length > 0) {
             parts.push(
@@ -722,17 +791,53 @@ class AgentFunctions {
         }
 
         if (procedure) {
-            parts.push(
-                `PROCEDURE — you MUST follow these steps in order for this request:\n${procedure.steps
-                    .map((step, index) => `${index + 1}. ${step}`)
-                    .join("\n")}`
-            );
+            // Rendered by procedureFunctions so branches are resolved in code
+            // against this turn's context and the model sees only the
+            // applicable path (§5.4). A model shown both sides of an IF picks
+            // whichever it prefers, which makes the condition decorative.
+            const rendered = procedureFunctions.renderForPrompt({
+                procedure,
+                context: guidance ? { segmentIds: guidance.segmentIds } : {},
+                actionsById: new Map((availableActions || []).map((action) => [action.actionId, action])),
+            });
+            if (rendered) {
+                parts.push(`PROCEDURE — you MUST follow these steps in order for this request:\n${rendered}`);
+            }
         }
 
         parts.push(
             `Identity verified: ${identityVerified ? "yes" : "no"}. Cite knowledge chunk ids you used in citationChunkIds. If you need information only the user can provide, respond with {"type":"clarify",...}.`
         );
-        return parts.join("\n\n");
+        return { prompt: parts.join("\n\n"), maxTokens: identity.maxTokens };
+    }
+
+    // Everything a condition may read, assembled once per turn (§2.6). Built
+    // here rather than inside the evaluator so ten rules cost one assembly, and
+    // so the set of readable fields is visible in one place next to the
+    // allowlist that enforces it.
+    _buildConditionContext({ org, conversation, endUser, identityVerified, gate }) {
+        const attributes = {};
+        for (const entry of conversation.attributes || []) {
+            // Keyed by name as well as id: a rule written in the dashboard
+            // references the attribute the author picked, and both spellings
+            // reaching the evaluator is cheaper than making the author care.
+            if (entry.name) attributes[entry.name] = entry.value;
+            attributes[entry.attributeId] = entry.value;
+        }
+
+        return {
+            identityVerified: identityVerified === true,
+            turnCount: (conversation.turnCount || 0) + 1,
+            sentiment: gate ? gate.sentiment : null,
+            intent: gate ? gate.intent : null,
+            language: gate ? gate.language : null,
+            planId: (org.credits && org.credits.plan) || null,
+            email: endUser ? endUser.email : null,
+            conversationCount: endUser ? endUser.conversationCount || 0 : 0,
+            firstSeenAt: endUser ? endUser.firstSeenAt : null,
+            attributes,
+            tableValues: {},
+        };
     }
 
     _addUsage(trace, model, result) {
