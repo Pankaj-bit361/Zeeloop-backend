@@ -50,6 +50,31 @@ describe("plan registry", () => {
         }
     });
 
+    test("STARTER is the $29 entry tier, and it is what unlocks the upgrade trigger", () => {
+        // The number is asserted because it is shown in three other places —
+        // the landing page, the dashboard's plan cards, and the provider's
+        // variant. If it moves here and nowhere else, customers see one price
+        // and get charged another.
+        assert.equal(PLANS[PlanId.STARTER].priceUsd, 29);
+        assert.equal(PLANS[PlanId.STARTER].limits.conversations, 1000);
+        assert.ok(planHasFeature(PlanId.STARTER, FeatureKey.TABLES));
+        assert.ok(planHasFeature(PlanId.STARTER, FeatureKey.ACTIONS));
+        // Not everything, though — procedures and the email channel are what
+        // GROWTH is for, and a tier that includes them has nothing to sell.
+        assert.equal(planHasFeature(PlanId.STARTER, FeatureKey.PROCEDURES), false);
+        assert.equal(planHasFeature(PlanId.STARTER, FeatureKey.EMAIL_CHANNEL), false);
+    });
+
+    test("every paid tier is cheaper than the one above it, with no gaps in the ladder", () => {
+        // Guards the insertion itself: a new tier priced outside its slot makes
+        // the pricing page non-monotonic, which is the kind of thing nobody
+        // notices until a customer asks why the cheaper plan does more.
+        const paid = [PlanId.STARTER, PlanId.GROWTH, PlanId.SCALE];
+        for (const id of paid) {
+            assert.ok(PLANS[id].priceUsd > 0, `${id} is a paid tier and must cost something`);
+        }
+    });
+
     test("limits increase monotonically with price", () => {
         const ladder = [PlanId.FREE, PlanId.STARTER, PlanId.GROWTH, PlanId.SCALE];
         for (let i = 1; i < ladder.length; i++) {

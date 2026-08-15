@@ -35,12 +35,19 @@ const PLANS = {
         },
     },
 
+    // The entry paid tier, and the one the FREE plan's ceiling is designed to
+    // push people into: it is the cheapest way to make "where is my order"
+    // work, because it is the first plan with TABLES and ACTIONS.
+    //
+    // 1,000 conversations rather than 500 so the step up from FREE is a step in
+    // volume as well as capability — the landing page advertises 500 on FREE,
+    // and two adjacent cards showing the same number reads as a mistake.
     [PlanId.STARTER]: {
         id: PlanId.STARTER,
         name: "Starter",
-        priceUsd: 49,
+        priceUsd: 29,
         features: [FeatureKey.KNOWLEDGE, FeatureKey.TABLES, FeatureKey.ACTIONS],
-        limits: { conversations: 500, sources: 25, actions: 5, tables: 3, seats: 3, costUsd: 40 },
+        limits: { conversations: 1000, sources: 25, actions: 5, tables: 3, seats: 3, costUsd: 55 },
     },
 
     [PlanId.GROWTH]: {
