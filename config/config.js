@@ -179,6 +179,15 @@ module.exports = {
     RAZORPAY_KEY_ID: process.env.RAZORPAY_KEY_ID || "",
     RAZORPAY_KEY_SECRET: process.env.RAZORPAY_KEY_SECRET || "",
     RAZORPAY_WEBHOOK_SECRET: process.env.RAZORPAY_WEBHOOK_SECRET || "",
+    /* Optional Razorpay Offer id, attached to every subscription created while
+       it is set. Environment-only and never committed — unlike the plan ids
+       below, this one changes what a customer is charged.
+
+       For running a live checkout without paying full price. Unset it as soon
+       as the test is done: it discounts EVERY customer, and a single-use offer
+       that has been spent may make later checkouts fail outright. server.js
+       warns about it on every boot for that reason. */
+    RAZORPAY_OFFER_ID: process.env.RAZORPAY_OFFER_ID || "",
 
     /* One provider plan id per paid tier, keyed by PlanId so plans.js stays
        provider-agnostic. These are the ids of the LIVE Razorpay plans, and they
