@@ -65,10 +65,21 @@ function subscriptionEvent({ orgId, planId = "GROWTH", status = "active", eventI
 
 before(async () => {
     AUTH_A = authHeader(await devLogin(SEED_ORG_ID));
-    const probe = await postWebhook({ meta: { event_name: "ping" } }, { omitSignature: true });
-    // 503 means no provider configured; 401 means configured and it rejected an
-    // unsigned body, which is exactly what it should do.
-    billingConfigured = probe.status !== 503;
+    /* Every payload below is Lemon Squeezy shaped — `meta.event_name`, an
+       `x-signature` header, `data.attributes`. So the question is not "is any
+       provider configured" but "is THIS one active", and a correctly signed
+       ping answers it in one request:
+
+         200  Lemon Squeezy, with the secret these tests sign with — run them
+         401  a provider is active but it is not this one (or the secret differs)
+         503  no provider configured at all
+
+       An earlier version asked only `status !== 503`, which was right while
+       Lemon Squeezy was the only adapter. Once RAZORPAY became the default, it
+       started reading a Razorpay 401 as "configured, go ahead" and every suite
+       below would have failed on a signature it was never going to match. */
+    const probe = await postWebhook({ meta: { event_name: "ping" } });
+    billingConfigured = probe.status === 200;
 });
 
 describe("GET /api/org/:orgId/billing", () => {

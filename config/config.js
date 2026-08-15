@@ -165,12 +165,14 @@ module.exports = {
     // Which adapter functions/billing/providers resolves. NONE means checkout
     // returns 503 and everything stays on the free plan — the backend must run
     // without a payment provider, same as it runs without Sentry.
-    BILLING_PROVIDER: process.env.BILLING_PROVIDER || "NONE",
+    // Razorpay is the live provider. Still overridable, because the webhook and
+    // checkout paths have to be exercisable against a different one without a
+    // code change. An unconfigured provider is not a crash: isConfigured() is
+    // false without the keys below and checkout answers 503.
+    BILLING_PROVIDER: process.env.BILLING_PROVIDER || "RAZORPAY",
     LEMON_SQUEEZY_API_KEY: process.env.LEMON_SQUEEZY_API_KEY || "",
     LEMON_SQUEEZY_STORE_ID: process.env.LEMON_SQUEEZY_STORE_ID || "",
     LEMON_SQUEEZY_WEBHOOK_SECRET: process.env.LEMON_SQUEEZY_WEBHOOK_SECRET || "",
-    // One variant id per paid plan, from the provider dashboard. Keyed by PlanId
-    // so plans.js stays provider-agnostic.
     // Razorpay. KEY_SECRET is the API secret; WEBHOOK_SECRET is a different
     // value set on the webhook settings page — using one for the other fails
     // every signature check in a way that looks like an attack.
@@ -178,10 +180,22 @@ module.exports = {
     RAZORPAY_KEY_SECRET: process.env.RAZORPAY_KEY_SECRET || "",
     RAZORPAY_WEBHOOK_SECRET: process.env.RAZORPAY_WEBHOOK_SECRET || "",
 
+    /* One provider plan id per paid tier, keyed by PlanId so plans.js stays
+       provider-agnostic. These are the ids of the LIVE Razorpay plans, and they
+       carry the amount that is actually charged — plans.js only says what we
+       promise. `npm run verify:plans` compares the two.
+
+       Committed rather than left to the environment because they are public
+       identifiers, not secrets: they appear in the checkout URL, they cannot
+       move money on their own, and a deployment that is missing one answers 503
+       on the plan a customer just clicked. The keys stay in the environment.
+
+       Test-mode plans are DIFFERENT ids under the same names — a test key with
+       these ids 404s at checkout. Override all three via env for that. */
     BILLING_VARIANT_IDS: {
-        STARTER: process.env.BILLING_VARIANT_STARTER || "",
-        GROWTH: process.env.BILLING_VARIANT_GROWTH || "",
-        SCALE: process.env.BILLING_VARIANT_SCALE || "",
+        STARTER: process.env.BILLING_VARIANT_STARTER || "plan_TQAQggSVolBKOh",
+        GROWTH: process.env.BILLING_VARIANT_GROWTH || "plan_TQARaZsJoMNYRs",
+        SCALE: process.env.BILLING_VARIANT_SCALE || "plan_TQARvK1Ly2fm3z",
     },
 
     // ── Abuse and cost control (§8.2) ────────────────────────────────

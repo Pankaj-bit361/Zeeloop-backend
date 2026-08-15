@@ -26,6 +26,7 @@ const {
     BillingProvider,
     IdPrefix,
 } = require("../config/enums");
+const { getPlan } = require("../config/plans");
 const generalFunctions = require("../functions/utilFunctions/generalFunctions");
 const sessionFunctions = require("../functions/utilFunctions/sessionFunctions");
 

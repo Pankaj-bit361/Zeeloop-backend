@@ -16,7 +16,7 @@ const crypto = require("crypto");
 const config = require("../config/config");
 const razorpay = require("../functions/billing/providers/razorpayProvider");
 const { getProvider, nullProvider } = require("../functions/billing/providers");
-const { SubscriptionStatus, BillingProvider } = require("../config/enums");
+const { SubscriptionStatus, BillingProvider, PlanId } = require("../config/enums");
 
 const WEBHOOK_SECRET = "test_webhook_secret_not_a_real_one";
 
@@ -191,6 +191,20 @@ describe("configuration", () => {
         assert.equal(razorpay.isConfigured(), true);
         config.RAZORPAY_KEY_SECRET = "";
         assert.equal(razorpay.isConfigured(), false);
+    });
+
+    test("every paid plan has a provider plan id, and no two share one", () => {
+        /* The ids are three near-identical opaque strings pasted from a console.
+           Duplicate one and the customer who clicked Growth is charged Starter's
+           $29 — the subscription activates, the webhook applies whatever the
+           notes said, and every screen agrees with itself. `npm run verify:plans`
+           catches it against the live API; this catches it without a network. */
+        const ids = [PlanId.STARTER, PlanId.GROWTH, PlanId.SCALE].map((id) => {
+            const variantId = config.BILLING_VARIANT_IDS[id];
+            assert.ok(variantId, `${id} has no provider plan id configured`);
+            return variantId;
+        });
+        assert.equal(new Set(ids).size, ids.length, `duplicate plan id among ${ids.join(", ")}`);
     });
 
     test("the registry resolves RAZORPAY to this adapter", () => {
