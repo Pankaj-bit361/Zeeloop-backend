@@ -51,4 +51,10 @@ const subscriptionSchema = new mongoose.Schema(
     }
 );
 
+/* Two lifecycle crons sweep every tenant on the cluster: one expiring trials,
+   one ending grace periods. Both were collection scans whose cost grows with
+   the customer count — precisely the number nobody wants to be punished for. */
+subscriptionSchema.index({ status: 1, trialEndsAt: 1 });
+subscriptionSchema.index({ status: 1, gracePeriodEndsAt: 1 });
+
 module.exports = mongoose.model("Subscription", subscriptionSchema);

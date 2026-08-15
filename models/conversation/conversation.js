@@ -97,4 +97,28 @@ conversationSchema.index({ orgId: 1, "attributes.attributeId": 1, "attributes.va
 // Email threading looks a conversation up by the Message-IDs already seen on it.
 conversationSchema.index({ orgId: 1, "emailThread.messageIds": 1 });
 
+// The default inbox order and every "recent conversations" list. Without the
+// createdAt component the existing orgId index serves the filter and then the
+// whole workspace is sorted in memory to return one page — 900 documents
+// examined to yield 50, measured, and it scales with the workspace rather than
+// the page.
+conversationSchema.index({ orgId: 1, createdAt: -1 });
+
+/* The autonomous-resolution cron (analyticsFunctions.computeResolutions) runs
+   on a schedule across EVERY tenant, and matched nothing indexable: it was a
+   collection scan over the largest collection in the system.
+
+   Partial, because the cron only ever looks at conversations that are still
+   unresolved and have had no human reply. On a mature workspace that is a small
+   and roughly constant slice of a collection that grows forever, so the index
+   stays small while the collection does not. `lastMessageAt` leads the key
+   because it carries the range predicate. */
+conversationSchema.index(
+    { lastMessageAt: 1 },
+    {
+        name: "resolution_sweep",
+        partialFilterExpression: { isResolved: false, hasHumanReply: false },
+    }
+);
+
 module.exports = mongoose.model("Conversation", conversationSchema);

@@ -86,4 +86,9 @@ turnTraceSchema.index({ orgId: 1, belowThreshold: 1, createdAt: -1 });
 // given rule.
 turnTraceSchema.index({ orgId: 1, appliedRuleIds: 1, createdAt: -1 });
 
+// Opening one conversation's trace view. The bare conversationId index served
+// the filter but left the turn ordering to an in-memory sort, and traces are
+// the fastest-growing collection here — one row per turn, forever.
+turnTraceSchema.index({ orgId: 1, conversationId: 1, turn: 1 });
+
 module.exports = mongoose.model("TurnTrace", turnTraceSchema);

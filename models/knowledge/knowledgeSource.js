@@ -64,4 +64,15 @@ const knowledgeSourceSchema = new mongoose.Schema(
     }
 );
 
+// The sources list, newest first — the first thing Knowledge renders.
+knowledgeSourceSchema.index({ orgId: 1, createdAt: -1 });
+
+/* The re-sync cron sweeps every tenant looking for sources that are due.
+   Compound rather than partial: the cron matches `syncSchedule: {$in: [DAILY,
+   WEEKLY]}`, and a partialFilterExpression cannot express `$in` — Mongo allows
+   only $eq/$exists/$gt/$gte/$lt/$lte/$type/$and there. Leading on syncSchedule
+   means the scan visits only the two scheduled values, and nextSyncAt supplies
+   the range within each. */
+knowledgeSourceSchema.index({ syncSchedule: 1, nextSyncAt: 1 });
+
 module.exports = mongoose.model("KnowledgeSource", knowledgeSourceSchema);

@@ -70,6 +70,9 @@ const crawlJobSchema = new mongoose.Schema(
 
 // The claim query: queued or expired-lease, oldest first.
 crawlJobSchema.index({ status: 1, leaseExpiresAt: 1, createdAt: 1 });
+
+// The per-source job history the progress UI polls.
+crawlJobSchema.index({ orgId: 1, sourceId: 1, createdAt: -1 });
 // One live job per source. A second "sync now" click while one is running must
 // not start a second crawl of the same site.
 crawlJobSchema.index(

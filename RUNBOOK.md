@@ -195,3 +195,43 @@ leak.
 - **Environment variables**, other than the two named in §1. Everything else is
   reconstructable from the deployment configuration, and storing a full
   environment dump means storing every third-party key in one more place.
+
+---
+
+## 9. Deploying an index change
+
+Eight indexes were added for query performance (§ the `queryPlans` test suite
+names every query they serve). On a **fresh** database this is invisible.
+On the existing production cluster it is not, and the difference matters:
+
+**Mongoose builds indexes in the background on connect.** The first boot after
+this deploy will build eight indexes over collections that already hold data.
+Until each finishes, its queries fall back to the plan they used before — so
+the app is correct throughout, just no faster yet.
+
+What to expect on Atlas:
+
+- Build time scales with collection size. `conversations`, `messages`,
+  `turntraces` and `chunks` are the large ones.
+- Background builds take I/O and RAM. On a small tier this can be felt as
+  elevated latency while they run. Deploy it when a few minutes of extra load
+  is acceptable, not during a peak.
+- Nothing needs to be done by hand. Do not pre-create them; mongoose will.
+
+To confirm afterwards, from the Atlas shell:
+
+```js
+db.conversations.getIndexes()   // expect orgId_1_createdAt_-1 and resolution_sweep
+db.chunks.getIndexes()          // expect orgId_1_sourceId_1_position_1
+db.subscriptions.getIndexes()   // expect status_1_trialEndsAt_1
+```
+
+**One index is partial.** `resolution_sweep` on `conversations` covers only
+documents where `isResolved: false` and `hasHumanReply: false`, which is what
+keeps it small on a collection that grows forever. If the autonomous-resolution
+cron's filter is ever changed so it no longer includes both of those equalities,
+the index silently stops being used and the cron goes back to scanning the
+collection. `tests/queryPlans.test.js` fails if that happens.
+
+**The plan tests drop and rebuild indexes.** They run against their own
+database (`zealoop_plans_test`). Never point `TEST_MONGODB_URI` at production.
