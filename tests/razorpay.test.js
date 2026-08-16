@@ -208,55 +208,6 @@ describe("in-page checkout config", () => {
             email: "a@b.test",
         });
 
-    // Captures the outgoing request so the body can be inspected.
-    const captureFetch = (body) => {
-        const original = global.fetch;
-        const sent = {};
-        global.fetch = async (url, init) => {
-            sent.url = url;
-            sent.body = JSON.parse(init.body);
-            return { ok: true, json: async () => body, text: async () => "" };
-        };
-        return {
-            sent,
-            restore: () => {
-                global.fetch = original;
-            },
-        };
-    };
-
-    test("sends no offer_id at all when none is configured", async () => {
-        /* The default, and the one that matters: an offer discounts EVERY
-           customer who checks out while it is set. It must take an explicit
-           environment variable to switch on, and absence must mean absence —
-           not an empty string that Razorpay might interpret. */
-        const saved = config.RAZORPAY_OFFER_ID;
-        config.RAZORPAY_OFFER_ID = "";
-        const { sent, restore } = captureFetch({ id: "sub_9", short_url: "https://rzp.io/i/abc" });
-        try {
-            await checkout();
-            assert.equal("offer_id" in sent.body, false, "an unset offer must send no field");
-        } finally {
-            restore();
-            config.RAZORPAY_OFFER_ID = saved;
-        }
-    });
-
-    test("attaches offer_id when one is configured", async () => {
-        // Creating an offer in the dashboard does nothing on its own — it
-        // reaches the payment sheet only by riding on the subscription.
-        const saved = config.RAZORPAY_OFFER_ID;
-        config.RAZORPAY_OFFER_ID = "offer_TESTVALUE";
-        const { sent, restore } = captureFetch({ id: "sub_9", short_url: "https://rzp.io/i/abc" });
-        try {
-            await checkout();
-            assert.equal(sent.body.offer_id, "offer_TESTVALUE");
-        } finally {
-            restore();
-            config.RAZORPAY_OFFER_ID = saved;
-        }
-    });
-
     test("carries the subscription id and the PUBLIC key, and nothing else", async () => {
         const restore = stubFetch({ id: "sub_9", short_url: "https://rzp.io/i/abc" });
         try {

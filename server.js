@@ -291,15 +291,6 @@ async function connectWithRetry() {
 
 app.listen(config.PORT, () => {
     console.log(`Server: Zealoop backend listening on port ${config.PORT}`);
-    /* Loud on every boot, because a discount left switched on is invisible
-       otherwise: checkout keeps working, nobody complains, and the only trace
-       is in the settlement report weeks later. A single-use offer that has
-       already been spent is worse — later checkouts can fail outright. */
-    if (config.RAZORPAY_OFFER_ID) {
-        console.warn(
-            `Server: WARNING — RAZORPAY_OFFER_ID=${config.RAZORPAY_OFFER_ID} is set. Every subscription created will carry this discount. Unset it after testing.`
-        );
-    }
 });
 
 connectWithRetry();

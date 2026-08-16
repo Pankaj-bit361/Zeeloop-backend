@@ -187,25 +187,6 @@ class RazorpayProvider {
                     return_url: redirectUrl || "",
                 },
                 notify_info: email ? { notify_email: email } : undefined,
-                /* A Razorpay Offer, applied at creation — attaching it to the
-                   subscription is the only way it reaches the payment sheet.
-                   Creating one in the dashboard does nothing on its own.
-
-                   Environment-only and unset by default, deliberately. This is
-                   a discount on a real charge and it applies to EVERY customer
-                   who checks out while it is set. It exists so a live smoke
-                   test costs a few rupees instead of $29, and it is meant to
-                   be removed the moment that test is done.
-
-                   The trap: an offer with "Maximum Usage: 1" is spent after one
-                   subscription. Leave it set afterwards and every later
-                   checkout carries an exhausted offer id — which Razorpay may
-                   well reject outright, turning the entire upgrade path into a
-                   502 for real customers.
-
-                   undefined rather than "" because JSON.stringify drops
-                   undefined keys, so an unset offer sends no field at all. */
-                offer_id: config.RAZORPAY_OFFER_ID || undefined,
             }),
         });
 
