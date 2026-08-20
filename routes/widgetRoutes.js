@@ -111,4 +111,21 @@ router.post("/feedback", async (req, res) => {
     }
 });
 
+// §4.6 — real-time discovery. The widget never hardcodes a socket URL; it asks
+// here and connects to what it is told. That indirection is what lets the
+// socket tier move, split by region or fail over without shipping new widget JS
+// to every customer site — the same reason Intercom's messenger does it.
+router.post("/rtm/connect", async (req, res) => {
+    try {
+        const { status, json } = await chatFunctions.rtmConnect({ publicKey: req.body.publicKey });
+        return res.status(status).json(json);
+    } catch (error) {
+        console.error(`Widget router ${req.path} catch block`);
+        console.error(error);
+        generalFunctions.captureException(error);
+        return res.status(500).json({ success: false, error: "Internal server error, please contact support" });
+    }
+});
+
 module.exports = router;
+

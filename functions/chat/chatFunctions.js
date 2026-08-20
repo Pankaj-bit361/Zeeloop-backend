@@ -16,9 +16,11 @@ const {
     SourceStatus,
     QuotaState,
 } = require("../../config/enums");
+const config = require("../../config/config");
 const generalFunctions = require("../utilFunctions/generalFunctions");
 const { asId } = require("../utilFunctions/generalFunctions");
 const themeDerivation = require("../utilFunctions/themeDerivation");
+const realtimeHub = require("../realtime/realtimeHub");
 const usageFunctions = require("../billing/usageFunctions");
 const agentFunctions = require("../agent/agentFunctions");
 const attributeFunctions = require("../config/attributeFunctions");
@@ -37,6 +39,46 @@ const DEGRADED_REPLY =
 const actionFunctions = require("../action/actionFunctions");
 
 class ChatFunctions {
+    // POST /api/widget/rtm/connect — where to open the live socket.
+    //
+    // Returns a list, primary first, so a client that cannot reach the first
+    // endpoint has somewhere to go instead of falling back to polling on its
+    // first attempt. Today both entries point at this deployment; the shape is
+    // what matters, because changing it later would mean re-embedding every
+    // customer's snippet.
+    async rtmConnect({ publicKey }) {
+        console.log("ChatFunctions:rtmConnect: publicKey:", publicKey);
+        try {
+            if (!publicKey) {
+                return { status: 400, json: { success: false, error: "Invalid request. Please pass publicKey" } };
+            }
+            const org = await Org.findOne({ publicKey: asId(publicKey) }).select("orgId").lean();
+            if (!org) {
+                return { status: 404, json: { success: false, error: "Unknown publicKey" } };
+            }
+            const base = String(config.API_URL || "").replace(/^http/, "ws").replace(/\/$/, "");
+            return {
+                status: 200,
+                json: {
+                    success: true,
+                    data: {
+                        channelPrefix: `conv:${org.orgId}:`,
+                        endpoints: [{ endpoint: `${base}/rtm` }],
+                        // How long the client should wait for the socket before
+                        // giving up and letting polling carry the session.
+                        connectTimeoutMs: 6000,
+                        heartbeatMs: 25000,
+                    },
+                },
+            };
+        } catch (error) {
+            console.error("ChatFunctions:rtmConnect: Catch block");
+            console.error(error);
+            generalFunctions.captureException(error);
+            return { status: 500, json: { success: false, error: "Internal server error, please contact support" } };
+        }
+    }
+
     // POST /api/widget/bootstrap — org by publicKey, widget config + a conversation.
     //
     // The home screen default now lives in widgetConfigFunctions alongside the
@@ -301,6 +343,12 @@ class ChatFunctions {
                 conversation.endUserId = endUser.endUserId;
             }
             await conversation.save();
+
+            // Other tabs the same visitor has open are watching this thread.
+            realtimeHub.publish(org.orgId, conversationId, {
+                type: "message",
+                message: assistantMessage.toJSON(),
+            });
 
             // §2.3 — attribute detection runs after the reply is written and is
             // deliberately NOT awaited. It is worth a small-model call to keep
@@ -790,6 +838,9 @@ class ChatFunctions {
             conversation.lastMessageAt = new Date();
             conversation.lastMessagePreview = String(content).slice(0, 160);
             await conversation.save();
+
+            // The visitor is usually looking at this exact thread right now.
+            realtimeHub.publish(orgId, conversationId, { type: "message", message: message.toJSON() });
 
             return { status: 200, json: { success: true, data: { message } } };
         } catch (error) {

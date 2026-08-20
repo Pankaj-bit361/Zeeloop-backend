@@ -202,7 +202,13 @@ module.exports = {
     // Widget endpoints are public by design, so these are the only thing
     // between a scraped publicKey and an unbounded model bill.
     RATE_LIMIT_WINDOW_MS: Number(process.env.RATE_LIMIT_WINDOW_MS || 60_000),
-    RATE_LIMIT_PER_END_USER: Number(process.env.RATE_LIMIT_PER_END_USER || 20),
+    // The widget polls for live delivery, so a single legitimate visitor spends
+    // from this bucket without touching the keyboard: ~12/min with a
+    // conversation open and moving, ~4/min once it goes quiet, ~1/min while the
+    // launcher is closed — and every open tab spends separately. 20 was set
+    // before polling existed and would 429 a real visitor with two tabs open.
+    // 60 still leaves no room for abuse: no human sends 60 messages a minute.
+    RATE_LIMIT_PER_END_USER: Number(process.env.RATE_LIMIT_PER_END_USER || 60),
     RATE_LIMIT_PER_ORG: Number(process.env.RATE_LIMIT_PER_ORG || 300),
     RATE_LIMIT_PER_IP: Number(process.env.RATE_LIMIT_PER_IP || 60),
 

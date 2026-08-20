@@ -238,6 +238,18 @@ async function seed() {
             ],
         },
         {
+            // Real prose, not a heading stub: the demo agent has to be able to
+            // actually ANSWER something, and every other seeded source is a
+            // one-line placeholder that grounding correctly refuses to use.
+            type: SourceType.SNIPPET,
+            name: "Refund policy",
+            status: SourceStatus.READY,
+            syncedAgo: 6 * HOUR,
+            content:
+                "Refund policy. Refunds at AcmeShip are processed within 5 to 7 business days after the returned item passes inspection at our warehouse. Once approved, the money is returned to the original payment method. Card refunds typically appear on your statement within 5-7 business days, while bank transfers can take up to 10 business days. If a refund has not arrived after 10 business days, contact support with your order number and we will trace it with the payment provider. Shipping fees are refundable only when the return is due to our error, such as a damaged or incorrect item.",
+            sections: [["Refund policy"]],
+        },
+        {
             type: SourceType.SNIPPET,
             name: "Holiday shipping cutoffs",
             status: SourceStatus.READY,

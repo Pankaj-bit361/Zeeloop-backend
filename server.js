@@ -8,6 +8,7 @@ if (process.env.NEW_RELIC_LICENSE_KEY && process.env.NEW_RELIC_ENABLED !== "fals
 }
 
 const path = require("path");
+const http = require("http");
 const express = require("express");
 const mongoose = require("mongoose");
 const helmet = require("helmet");
@@ -16,6 +17,7 @@ const cookieParser = require("cookie-parser");
 const cron = require("node-cron");
 const config = require("./config/config");
 const generalFunctions = require("./functions/utilFunctions/generalFunctions");
+const realtimeHub = require("./functions/realtime/realtimeHub");
 const analyticsFunctions = require("./functions/analytics/analyticsFunctions");
 const complianceFunctions = require("./functions/compliance/complianceFunctions");
 const healthFunctions = require("./functions/health/healthFunctions");
@@ -198,7 +200,10 @@ const FRAME_CSP = [
     "style-src 'self' 'unsafe-inline'",
     "img-src 'self' data: https:",
     "font-src 'self' data:",
-    `connect-src 'self' ${config.API_URL}`,
+    // WebSocket counts as connect-src: without the ws(s) origin here the
+    // real-time socket is blocked by our own policy and the widget silently
+    // falls back to polling forever.
+    `connect-src 'self' ${config.API_URL} ${String(config.API_URL).replace(/^http/, "ws")}`,
     "object-src 'none'",
     "base-uri 'none'",
     "form-action 'none'",
@@ -211,21 +216,35 @@ const embeddable = (req, res, next) => {
     res.setHeader("Cross-Origin-Resource-Policy", "cross-origin");
     next();
 };
+
+// The demo, compare and theme-lab pages are stand-ins for a CUSTOMER'S site,
+// not part of the widget. They carry the inline snippet a customer pastes, so
+// the frame's `script-src 'self'` would block exactly the thing they exist to
+// demonstrate. They serve no customer data and are not linked from the product.
+const demoPage = (req, res, next) => {
+    res.removeHeader("X-Frame-Options");
+    res.setHeader("Content-Security-Policy", "frame-ancestors *");
+    res.setHeader("Cross-Origin-Resource-Policy", "cross-origin");
+    next();
+};
 app.get("/widget.js", widgetCors, embeddable, (req, res) => {
     res.sendFile(path.join(widgetDist, "widget.js"), { maxAge: "5m" });
 });
-app.get("/widget/demo", embeddable, (req, res) => {
+app.get("/widget/demo", demoPage, (req, res) => {
     res.sendFile(path.join(widgetDist, "demo.html"));
 });
 // Side-by-side comparison against Intercom — internal demo page, not customer-facing.
-app.get("/widget/compare", embeddable, (req, res) => {
+app.get("/widget/compare", demoPage, (req, res) => {
     res.sendFile(path.join(widgetDist, "compare.html"));
 });
 // Theme derivation lab — renders the server's token derivation across test brand colors.
-app.get("/widget/theme-lab", embeddable, (req, res) => {
+app.get("/widget/sdk-demo", demoPage, (req, res) => {
+    res.sendFile(path.join(widgetDist, "sdk-demo.html"));
+});
+app.get("/widget/theme-lab", demoPage, (req, res) => {
     res.sendFile(path.join(widgetDist, "theme-lab.html"));
 });
-app.get("/widget/theme-lab.js", embeddable, (req, res) => {
+app.get("/widget/theme-lab.js", demoPage, (req, res) => {
     res.sendFile(path.join(widgetDist, "theme-lab.js"));
 });
 app.use("/widget/frame", embeddable, express.static(path.join(widgetDist, "frame"), { maxAge: "5m" }));
@@ -289,7 +308,13 @@ async function connectWithRetry() {
     }
 }
 
-app.listen(config.PORT, () => {
+// The realtime hub shares this http server rather than opening a second
+// port: one origin, one TLS certificate, and no extra firewall rule for a
+// customer's network to block.
+const httpServer = http.createServer(app);
+realtimeHub.attach(httpServer);
+
+httpServer.listen(config.PORT, () => {
     console.log(`Server: Zealoop backend listening on port ${config.PORT}`);
 });
 
