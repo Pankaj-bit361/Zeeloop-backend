@@ -4,12 +4,61 @@ const redactionFunctions = require("./redactionFunctions");
 
 // Typed error so every caller can decide fail-open vs fail-closed.
 class LlmError extends Error {
-    constructor(provider, message, status) {
+    constructor(provider, message, status, details) {
         super(`${provider}: ${message}`);
         this.name = "LlmError";
         this.provider = provider;
         this.status = status;
+        // What the model actually said. A caller that asked for JSON and got
+        // prose can decide the prose is worth keeping — see _runGenerate.
+        if (details && details.rawText) this.rawText = details.rawText;
     }
+}
+
+// Models wrap JSON in prose ("Here's the object: {...}"), in fences, or in
+// both. Strip what we can, then fall back to the first balanced brace block —
+// scanning rather than regexing, because a regex cannot match nested braces
+// and the payloads here contain objects inside objects.
+function extractJsonObject(text) {
+    const trimmed = String(text || "").trim();
+    const unfenced = trimmed.replace(/^```(?:json)?/i, "").replace(/```$/, "").trim();
+    for (const candidate of [unfenced, trimmed]) {
+        try {
+            return JSON.parse(candidate);
+        } catch {
+            /* fall through to brace scanning */
+        }
+    }
+    const start = unfenced.indexOf("{");
+    if (start === -1) return null;
+    let depth = 0;
+    let inString = false;
+    let escaped = false;
+    for (let index = start; index < unfenced.length; index++) {
+        const char = unfenced[index];
+        if (escaped) {
+            escaped = false;
+            continue;
+        }
+        if (char === "\\") {
+            escaped = true;
+            continue;
+        }
+        if (char === '"') inString = !inString;
+        if (inString) continue;
+        if (char === "{") depth += 1;
+        else if (char === "}") {
+            depth -= 1;
+            if (depth === 0) {
+                try {
+                    return JSON.parse(unfenced.slice(start, index + 1));
+                } catch {
+                    return null;
+                }
+            }
+        }
+    }
+    return null;
 }
 
 // The ONLY file that talks to model providers. Chat completions and embeddings
@@ -98,20 +147,37 @@ class LlmFunctions {
         console.log("LlmFunctions:completeJson: model:", model);
         const jsonSystem = `${system || ""}\n\nRespond with ONLY a valid JSON object${schemaHint ? ` of shape: ${schemaHint}` : ""}. No prose, no markdown fences.`;
 
-        let lastError = null;
         let totals = { inputTokens: 0, outputTokens: 0 };
+        let lastText = "";
+        let turns = messages;
         for (let attempt = 0; attempt < 2; attempt++) {
-            const result = await this.complete({ model, system: jsonSystem, messages, maxTokens });
+            const result = await this.complete({ model, system: jsonSystem, messages: turns, maxTokens });
             totals.inputTokens += result.inputTokens;
             totals.outputTokens += result.outputTokens;
-            try {
-                const cleaned = result.text.trim().replace(/^```(json)?/i, "").replace(/```$/, "").trim();
-                return { json: JSON.parse(cleaned), ...totals };
-            } catch (error) {
-                lastError = error;
-            }
+            lastText = result.text;
+
+            const parsed = extractJsonObject(result.text);
+            if (parsed && typeof parsed === "object") return { json: parsed, raw: result.text, ...totals };
+
+            // Show the model its own output on the retry. "Try again" alone
+            // tends to produce the same shape a second time.
+            turns = [
+                ...messages,
+                { role: "assistant", content: String(result.text).slice(0, 2000) },
+                {
+                    role: "user",
+                    content: `That was not valid JSON. Reply again with ONLY the JSON object${
+                        schemaHint ? ` of shape: ${schemaHint}` : ""
+                    }. No prose before or after it.`,
+                },
+            ];
         }
-        throw new LlmError("openrouter", `completeJson: model returned invalid JSON twice: ${lastError.message}`, 502);
+        throw new LlmError(
+            "openrouter",
+            "completeJson: model returned invalid JSON twice",
+            502,
+            { rawText: lastText }
+        );
     }
 
     // Two transports, ONE model. Google direct is preferred when a key is set;
@@ -267,4 +333,5 @@ class LlmFunctions {
 }
 
 module.exports = new LlmFunctions();
+module.exports.extractJsonObject = extractJsonObject;
 module.exports.LlmError = LlmError;

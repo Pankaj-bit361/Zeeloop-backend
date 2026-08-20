@@ -581,16 +581,44 @@ class AgentFunctions {
         const toolCalls = [];
         for (let iteration = 0; iteration < config.MAX_TOOL_ITERATIONS; iteration++) {
             trace.iterations = iteration + 1;
-            const result = await llmFunctions.completeJson({
-                model: config.ANSWER_MODEL,
-                system,
-                schemaHint: `{"type": "answer", "text": string, "citationChunkIds": string[]} OR {"type": "clarify", "text": string} OR {"type": "tool_call", "actionId": string, "args": object}`,
-                messages,
-                // Comes from the workspace's answer-length setting (§2.8). A
-                // model told to be concise and handed a thousand tokens uses
-                // them, so the instruction and the ceiling move together.
-                maxTokens: maxTokens || config.MAX_OUTPUT_TOKENS,
-            });
+            let result;
+            try {
+                result = await llmFunctions.completeJson({
+                    model: config.ANSWER_MODEL,
+                    system,
+                    schemaHint: `{"type": "answer", "text": string, "citationChunkIds": string[]} OR {"type": "clarify", "text": string} OR {"type": "tool_call", "actionId": string, "args": object}`,
+                    messages,
+                    // Comes from the workspace's answer-length setting (§2.8). A
+                    // model told to be concise and handed a thousand tokens uses
+                    // them, so the instruction and the ceiling move together.
+                    maxTokens: maxTokens || config.MAX_OUTPUT_TOKENS,
+                });
+            } catch (error) {
+                /* The model sometimes writes a perfectly good answer and simply
+                   does not wrap it in JSON. Discarding that and showing the
+                   visitor "something went wrong" is the worse failure: we had
+                   the answer and threw it away.
+
+                   Salvaging is safe because it changes nothing downstream —
+                   the reply still goes through Stage 5 validation, so prose
+                   that is not grounded in the retrieved chunks abstains exactly
+                   as a malformed-JSON answer would have. What it cannot do is
+                   call a tool: a tool call has arguments, and guessing those
+                   from prose is precisely the kind of invention this pipeline
+                   exists to prevent. */
+                const salvaged = String(error && error.rawText ? error.rawText : "").trim();
+                const usable = salvaged.length > 20 && !salvaged.startsWith("{") && !salvaged.startsWith("[");
+                if (!usable) throw error;
+                console.log("AgentFunctions:_runGenerate: salvaged prose from a non-JSON answer");
+                trace.jsonSalvaged = true;
+                return {
+                    reply: salvaged,
+                    citations: [],
+                    toolCalls,
+                    outcome: TurnOutcome.ANSWERED,
+                    halted: false,
+                };
+            }
             this._addUsage(trace, config.ANSWER_MODEL, result);
             const output = result.json;
 
