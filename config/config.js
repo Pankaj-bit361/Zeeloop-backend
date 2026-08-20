@@ -102,18 +102,25 @@ module.exports = {
        LARGE_MODEL's other callers — copilot, evals, simulations, the
        onboarding wizard — run rarely and are quality-sensitive.
 
-       Haiku rather than Sonnet because this is grounded RAG: the retrieved
-       chunks are in the prompt and the job is to answer FROM them, not to
-       reason from scratch. Sonnet's advantage is smallest exactly here, and
-       the price difference is 3x on input and output both ($1/$5 against
-       $3/$15 per Mtok). That takes a conversation from roughly 7 cents to
-       under 3, which is the difference between the paid tiers making money and
-       losing it.
+       A small model rather than a large one because this is grounded RAG: the
+       retrieved chunks are already in the prompt and the job is to answer FROM
+       them, not to reason from scratch. A frontier model's advantage is
+       smallest exactly here, and it is the difference between the paid tiers
+       making money and losing it.
 
-       Set ANSWER_MODEL=anthropic/claude-sonnet-5 to put it back — the answer
-       quality is worth measuring on your own traces before deciding, and
-       Evaluation exists for exactly that. */
-    ANSWER_MODEL: process.env.ANSWER_MODEL || "anthropic/claude-haiku-4.5",
+       gpt-5.6-luna at $0.20/$1.20 per Mtok, against claude-haiku-4.5 at
+       $1.00/$5.00 and claude-sonnet-5 at $2.00/$10.00. Measured on this
+       workspace's own traces rather than taken from the price list: three
+       grounded questions cost $0.00079 a turn on Luna against $0.00203 on
+       Haiku — 2.6x, with the same answers, the same receipts and no
+       malformed-JSON turns on either.
+
+       Caveat worth keeping in view: that was three questions on one
+       workspace's content. Answer quality is worth measuring on YOUR traces
+       before trusting it at volume, and Evaluation exists for exactly that.
+       ANSWER_MODEL is an env override for that reason — anthropic/claude-haiku-4.5
+       and anthropic/claude-sonnet-5 are both a restart away. */
+    ANSWER_MODEL: process.env.ANSWER_MODEL || "openai/gpt-5.6-luna",
     // Retried once when the primary model 5xxes or the request fails outright
     // (§8.3). Chat only — see the note on LlmFunctions.complete for why
     // embeddings must never fall back.
