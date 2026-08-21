@@ -100,7 +100,20 @@ class GeneralFunctions {
 
     estimateCostUsd({ model, inputTokens, outputTokens }) {
         const price = config.PRICE_PER_MTOK[model];
-        if (!price) return 0;
+        if (!price) {
+            /* Still 0 — a pricing gap must not fail a customer's turn. But it
+               says so, once per model per process, because the failure is
+               otherwise invisible: spend looks lower, the ceiling never trips,
+               and any comparison built on these numbers is quietly wrong. */
+            if (!this._unpricedModels) this._unpricedModels = new Set();
+            if (!this._unpricedModels.has(model)) {
+                this._unpricedModels.add(model);
+                console.error(
+                    `generalFunctions:estimateCostUsd: no price for "${model}" — its turns are being recorded as free. Add it to config.PRICE_PER_MTOK.`
+                );
+            }
+            return 0;
+        }
         return (inputTokens * price.input + outputTokens * price.output) / 1_000_000;
     }
 }

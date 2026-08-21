@@ -94,7 +94,13 @@ module.exports = {
     OPENROUTER_API_KEY: process.env.OPENROUTER_API_KEY || "",
     OPENROUTER_BASE_URL: process.env.OPENROUTER_BASE_URL || "https://openrouter.ai/api/v1",
     // OpenRouter is OpenAI-compatible, so these can be any slug it serves
-    SMALL_MODEL: process.env.SMALL_MODEL || "anthropic/claude-haiku-4.5",
+    /* Gate, query rewrite, chitchat and attribute detection. Runs on every
+       turn like ANSWER_MODEL does, so the same argument applies — and it
+       carries the safety gate, which is why the switch was checked against
+       behaviour rather than price: a PII request, a prompt injection, an angry
+       customer, a Spanish greeting and a plain hello all produced identical
+       outcomes on both models. */
+    SMALL_MODEL: process.env.SMALL_MODEL || "openai/gpt-5.6-luna",
     LARGE_MODEL: process.env.LARGE_MODEL || "anthropic/claude-sonnet-5",
 
     /* The model that writes the customer-facing answer, and the single biggest
@@ -162,10 +168,24 @@ module.exports = {
     MAX_TOOL_ITERATIONS: 4,
     MAX_OUTPUT_TOKENS: 1024,
 
-    // Pricing per million tokens, used by estimateCostUsd
+    /* Pricing per million tokens, used by estimateCostUsd.
+       Figures are what OPENROUTER charges, read from its /models endpoint,
+       because that is who invoices us — not the model vendor's own list price.
+
+       Every model this backend can select must appear here. A missing entry
+       does not fail loudly: estimateCostUsd returns 0, the turn is recorded as
+       free, and the effects are all silent — cost-per-resolution understates,
+       the spend ceiling never trips, and a model comparison run off these
+       numbers is simply wrong. That is not hypothetical; it happened while
+       switching the answer model, and the switch looked far cheaper than it
+       was until the zeroes gave it away. */
     PRICE_PER_MTOK: {
+        "openai/gpt-5.6-luna": { input: 0.2, output: 1.2 },
+        "openai/gpt-5.6-luna-pro": { input: 0.2, output: 1.2 },
         "anthropic/claude-haiku-4.5": { input: 1, output: 5 },
-        "anthropic/claude-sonnet-5": { input: 3, output: 15 },
+        "anthropic/claude-sonnet-5": { input: 2, output: 10 },
+        "openai/gpt-5-mini": { input: 0.25, output: 2 },
+        "openai/gpt-5": { input: 1.25, output: 10 },
     },
 
     // ── Billing ──────────────────────────────────────────────────────
