@@ -9,7 +9,14 @@ const assert = require("node:assert/strict");
 
 const widgetConfigFunctions = require("../functions/widget/widgetConfigFunctions");
 const responseComponentFunctions = require("../functions/widget/responseComponentFunctions");
-const { HeaderTextMode, HomeSectionType, ResponseComponentType, ToolCallStatus, TurnOutcome } = require("../config/enums");
+const {
+    HeaderTextMode,
+    BackgroundType,
+    HomeSectionType,
+    ResponseComponentType,
+    ToolCallStatus,
+    TurnOutcome,
+} = require("../config/enums");
 
 const org = (widget, agent) => ({ orgId: "org_test", name: "AcmeShip", widget: widget || {}, agent: agent || {} });
 
@@ -214,16 +221,63 @@ describe("header text colour (§4.5)", () => {
     });
 
     test("a solid background computes from luminance", () => {
+        /* This test used to pass `background: "solid"`, which is a value that
+           field never holds — it stores a preset name. So it was exercising a
+           branch the real system could not reach, and reading the colour from
+           accentColor, which paints buttons rather than the hero.
+
+           The contract now: backgroundType says SOLID, backgroundSolid is the
+           colour, and that colour is what gets measured. */
         const dark = widgetConfigFunctions.resolveHeaderTextColor({
-            org: org({ headerTextMode: HeaderTextMode.AUTO, background: "solid", accentColor: "#0B1020" }),
+            org: org({
+                headerTextMode: HeaderTextMode.AUTO,
+                backgroundType: BackgroundType.SOLID,
+                backgroundSolid: "#0B1020",
+            }),
         });
         assert.equal(dark.color, "#FFFFFF");
 
         const light = widgetConfigFunctions.resolveHeaderTextColor({
-            org: org({ headerTextMode: HeaderTextMode.AUTO, background: "solid", accentColor: "#FFF9C4" }),
+            org: org({
+                headerTextMode: HeaderTextMode.AUTO,
+                backgroundType: BackgroundType.SOLID,
+                backgroundSolid: "#FFF9C4",
+            }),
         });
         assert.equal(light.color, "#000000");
         assert.equal(light.source, "computed");
+    });
+
+    test("the background wins over the accent colour", () => {
+        // A pale yellow hero with a near-black accent needs BLACK text.
+        // Measuring the accent would answer WHITE and put white on yellow —
+        // which is what this function did before, for every workspace.
+        const result = widgetConfigFunctions.resolveHeaderTextColor({
+            org: org({
+                headerTextMode: HeaderTextMode.AUTO,
+                backgroundType: BackgroundType.SOLID,
+                backgroundSolid: "#FFF9C4",
+                accentColor: "#0B1020",
+            }),
+        });
+        assert.equal(result.color, "#000000");
+    });
+
+    test("an image is not described as a gradient", () => {
+        const result = widgetConfigFunctions.resolveHeaderTextColor({
+            org: org({ headerTextMode: HeaderTextMode.AUTO, backgroundType: BackgroundType.IMAGE }),
+        });
+        assert.ok(result.warning.includes("an image"), result.warning);
+    });
+
+    test("every non-solid background asks for a manual choice", () => {
+        for (const backgroundType of [BackgroundType.PRESET, BackgroundType.GRADIENT, BackgroundType.IMAGE]) {
+            const result = widgetConfigFunctions.resolveHeaderTextColor({
+                org: org({ headerTextMode: HeaderTextMode.AUTO, backgroundType }),
+            });
+            assert.equal(result.source, "gradient-default", backgroundType);
+            assert.ok(result.warning, backgroundType);
+        }
     });
 });
 

@@ -379,6 +379,30 @@ const HeaderTextMode = {
     WHITE: "WHITE",
 };
 
+/* What the home hero is painted with. PRESET keeps the five hand-tuned
+   gradients; SOLID and GRADIENT let a workspace supply its own colours.
+
+   IMAGE is deliberately absent. It needs somewhere to put the file, and this
+   deployment has no object storage — the same blocker as attachments. Adding
+   the enum value before the storage exists would let the dashboard offer an
+   option that cannot be saved. */
+const BackgroundType = {
+    PRESET: "PRESET",
+    SOLID: "SOLID",
+    GRADIENT: "GRADIENT",
+    /* By URL, not upload — this deployment has no object storage. The same
+       shape the schema already uses for agent.avatarUrl, so it is the
+       established pattern rather than a stopgap. When storage lands, upload
+       writes to this field and nothing else changes. */
+    IMAGE: "IMAGE",
+};
+
+// Which side of the viewport the launcher sits on.
+const LauncherSide = {
+    RIGHT: "right",
+    LEFT: "left",
+};
+
 const ConversationChannel = {
     CHAT: "CHAT",
     EMAIL: "EMAIL",
@@ -575,6 +599,8 @@ module.exports = {
     HomeSectionType,
     ResponseComponentType,
     HeaderTextMode,
+    BackgroundType,
+    LauncherSide,
     ConversationChannel,
     ActionKind,
     DataInputSource,

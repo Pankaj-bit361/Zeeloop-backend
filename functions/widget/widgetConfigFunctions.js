@@ -1,4 +1,51 @@
-const { HomeSectionType, HeaderTextMode, IdPrefix, ConfigObjectType } = require("../../config/enums");
+const {
+    HomeSectionType,
+    HeaderTextMode,
+    BackgroundType,
+    LauncherSide,
+    IdPrefix,
+    ConfigObjectType,
+} = require("../../config/enums");
+
+/* Validated, not sanitised. These values are interpolated into a CSS
+   background declaration inside the frame, so an unchecked string there is a
+   style injection — "red;--accent:#000" would escape the property it was
+   written into. */
+const HEX_COLOR = /^#[0-9a-fA-F]{6}$/;
+
+/* A background image URL ends up inside a CSS url() in the frame. Quotes,
+   parentheses, backslashes and whitespace can all break out of that function
+   and into the surrounding declaration, so they are refused outright rather
+   than escaped — there is no legitimate image URL that needs them.
+
+   https only: the frame is served over https on customer sites, and an http
+   image would be blocked as mixed content anyway. Failing here says so;
+   allowing it produces a background that silently never appears. */
+const UNSAFE_IN_CSS_URL = /["'()\\\s]/;
+
+function validateImageUrl(value) {
+    if (value === "") return { success: true };
+    if (typeof value !== "string" || value.length > 2000) {
+        return { success: false, error: "backgroundImageUrl must be a URL under 2000 characters" };
+    }
+    if (UNSAFE_IN_CSS_URL.test(value)) {
+        return { success: false, error: "backgroundImageUrl cannot contain quotes, brackets, backslashes or spaces" };
+    }
+    let parsed;
+    try {
+        parsed = new URL(value);
+    } catch (error) {
+        return { success: false, error: "backgroundImageUrl must be a valid URL" };
+    }
+    if (parsed.protocol !== "https:") {
+        return { success: false, error: "backgroundImageUrl must start with https://" };
+    }
+    return { success: true };
+}
+const POSITIONS = Object.values(LauncherSide).flatMap((side) => [`bottom-${side}`, `top-${side}`]);
+// Launcher offsets are bounded: negative pushes it off-screen, and something
+// large strands it in the middle of the customer's page.
+const MAX_LAUNCHER_SPACING = 200;
 const Org = require("../../models/org/org");
 const ConfigVersion = require("../../models/config/configVersion");
 const generalFunctions = require("../utilFunctions/generalFunctions");
@@ -112,9 +159,52 @@ class WidgetConfigFunctions {
                 };
             }
 
+            if (widget.backgroundType !== undefined && !Object.values(BackgroundType).includes(widget.backgroundType)) {
+                return {
+                    status: 400,
+                    json: { success: false, error: `backgroundType must be one of: ${Object.values(BackgroundType).join(", ")}` },
+                };
+            }
+            for (const field of ["backgroundSolid", "backgroundGradientFrom", "backgroundGradientTo"]) {
+                if (widget[field] !== undefined && widget[field] !== "" && !HEX_COLOR.test(widget[field])) {
+                    return { status: 400, json: { success: false, error: `${field} must be a #rrggbb colour` } };
+                }
+            }
+            if (widget.backgroundImageUrl !== undefined) {
+                const check = validateImageUrl(widget.backgroundImageUrl);
+                if (!check.success) return { status: 400, json: { success: false, error: check.error } };
+            }
+            for (const field of ["launcherSideSpacing", "launcherBottomSpacing"]) {
+                if (widget[field] === undefined) continue;
+                const value = Number(widget[field]);
+                if (!Number.isFinite(value) || value < 0 || value > MAX_LAUNCHER_SPACING) {
+                    return {
+                        status: 400,
+                        json: { success: false, error: `${field} must be between 0 and ${MAX_LAUNCHER_SPACING}` },
+                    };
+                }
+            }
+            if (widget.position !== undefined && !POSITIONS.includes(widget.position)) {
+                return { status: 400, json: { success: false, error: `position must be one of: ${POSITIONS.join(", ")}` } };
+            }
+
             await this._snapshot({ org, actorEmail });
 
-            const scalarFields = ["position", "theme", "accentColor", "background", "headerTextMode"];
+            const scalarFields = [
+                "position",
+                "theme",
+                "accentColor",
+                "background",
+                "headerTextMode",
+                "backgroundType",
+                "backgroundSolid",
+                "backgroundGradientFrom",
+                "backgroundGradientTo",
+                "backgroundImageUrl",
+                "backgroundFade",
+                "launcherSideSpacing",
+                "launcherBottomSpacing",
+            ];
             for (const field of scalarFields) {
                 if (widget[field] !== undefined) org.widget[field] = widget[field];
             }
@@ -271,18 +361,35 @@ class WidgetConfigFunctions {
         if (widget.headerTextMode === HeaderTextMode.BLACK) return { color: "#000000", source: "manual" };
         if (widget.headerTextMode === HeaderTextMode.WHITE) return { color: "#FFFFFF", source: "manual" };
 
-        const isGradient = widget.background && widget.background !== "solid";
+        /* A single luminance value can only describe a solid fill. Everything
+           else — the five presets and any custom gradient — has stops that can
+           straddle the threshold, so no computed value is readable across the
+           whole header.
+
+           This used to read `widget.background !== "solid"`, comparing against
+           a value `background` never holds: it stores a preset name. The answer
+           was right by luck because all five presets are gradients, but the
+           luminance branch below was unreachable, and would have started
+           misfiring the moment a solid option existed. */
+        const isGradient = widget.backgroundType !== BackgroundType.SOLID;
         if (isGradient) {
+            // An image has no luminance we can read at all, and telling someone
+            // "this background is a gradient" when they pointed at a photo is
+            // the kind of message that makes people distrust the whole screen.
+            const what = widget.backgroundType === BackgroundType.IMAGE ? "an image" : "a gradient";
             return {
                 color: "#FFFFFF",
                 source: "gradient-default",
                 // Surfaced rather than silently guessed, so the dashboard can
                 // prompt for a choice instead of leaving unreadable text up.
-                warning: "This background is a gradient — pick Black or White manually if the header text is hard to read.",
+                warning: `This background is ${what} — pick Black or White manually if the header text is hard to read.`,
             };
         }
 
-        const luminance = this._luminance(widget.accentColor || "#4F46E5");
+        // The BACKGROUND's luminance, not the accent's. Header text sits on the
+        // hero; the accent is what buttons and bubbles are painted with, so
+        // reading it here answered a question nobody asked.
+        const luminance = this._luminance(widget.backgroundSolid || widget.accentColor || "#4F46E5");
         return { color: luminance > 0.55 ? "#000000" : "#FFFFFF", source: "computed", luminance };
     }
 
@@ -370,5 +477,9 @@ class WidgetConfigFunctions {
 
 module.exports = new WidgetConfigFunctions();
 module.exports.DEFAULT_HOME_SECTIONS = DEFAULT_HOME_SECTIONS;
+// Exported so the URL guard can be tested without a database. It is a pure
+// function and the thing it prevents — a string escaping a CSS url() — is
+// worth asserting directly rather than through an HTTP round trip.
+module.exports.validateImageUrl = validateImageUrl;
 module.exports.SPACING_TOKENS = SPACING_TOKENS;
 module.exports.MAX_SECTIONS = MAX_SECTIONS;

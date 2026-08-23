@@ -4,6 +4,7 @@ const {
     AnswerLength,
     LanguagePolicy,
     HeaderTextMode,
+    BackgroundType,
     PlanId,
 } = require("../../config/enums");
 const { getPlan } = require("../../config/plans");
@@ -72,7 +73,28 @@ const orgSchema = new mongoose.Schema(
             // Default is match-system; orgs explicitly pin light or dark.
             theme: { type: String, enum: ["light", "dark", "auto"], default: "auto" },
             accentColor: { type: String, default: "" },
+            /* Which of the five hand-tuned preset gradients, when
+               backgroundType is PRESET. Kept as its own field rather than
+               folded into the custom colours so switching to SOLID and back
+               does not lose the preset the workspace had chosen. */
             background: { type: String, default: "aurora" },
+            backgroundType: { type: String, enum: Object.values(BackgroundType), default: BackgroundType.PRESET },
+            // Read only when backgroundType is SOLID.
+            backgroundSolid: { type: String, default: "" },
+            // Read only when backgroundType is GRADIENT. Two stops, top-left to
+            // bottom-right, matching what the dashboard asks for.
+            backgroundGradientFrom: { type: String, default: "" },
+            backgroundGradientTo: { type: String, default: "" },
+            // Read only when backgroundType is IMAGE. https only; see the
+            // validation in widgetConfigFunctions for why the scheme matters.
+            backgroundImageUrl: { type: String, default: "" },
+            /* Fades the hero into the panel surface instead of ending on a hard
+               edge. On by default because the presets were designed with the
+               fade and would look cut off without it. */
+            backgroundFade: { type: Boolean, default: true },
+            // Launcher offsets in px from the chosen corner.
+            launcherSideSpacing: { type: Number, default: 20 },
+            launcherBottomSpacing: { type: Number, default: 20 },
             // §4.5 — AUTO computes header text from background luminance, which
             // is right for a solid colour and wrong for a gradient whose two
             // stops straddle the threshold. Those need a manual choice.
