@@ -53,6 +53,23 @@ router.post("/:orgId/sources", reqOrgOwnerAuth, ...sourceCapacity, async (req, r
     }
 });
 
+router.patch("/:orgId/sources/:sourceId", reqOrgOwnerAuth, async (req, res) => {
+    try {
+        const { status, json } = await knowledgeFunctions.updateSource({
+            orgId: req.params.orgId,
+            sourceId: req.params.sourceId,
+            name: req.body.name,
+            content: req.body.content,
+        });
+        return res.status(status).json(json);
+    } catch (error) {
+        console.error(`Knowledge router ${req.path} catch block`);
+        console.error(error);
+        generalFunctions.captureException(error);
+        return res.status(500).json({ success: false, error: "Internal server error, please contact support" });
+    }
+});
+
 router.delete("/:orgId/sources/:sourceId", reqOrgOwnerAuth, async (req, res) => {
     try {
         const { status, json } = await knowledgeFunctions.deleteSource({

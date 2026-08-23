@@ -1,7 +1,7 @@
 "use strict";
 const { test, describe, before, after } = require("node:test");
 const assert = require("node:assert/strict");
-const { get, post, del, request, devLogin, authHeader, SEED_ORG_ID, randomSuffix } = require("./helpers/client");
+const { get, post, patch, del, request, devLogin, authHeader, SEED_ORG_ID, randomSuffix } = require("./helpers/client");
 
 let AUTH_A;
 const createdSourceIds = [];
@@ -224,5 +224,165 @@ describe("POST /api/knowledge/:orgId/sources/:sourceId/resync", () => {
     test("resync on a nonexistent source returns 404", async () => {
         const result = await post(`/api/knowledge/${SEED_ORG_ID}/sources/src_bogus/resync`, { headers: AUTH_A });
         assert.equal(result.status, 404);
+    });
+});
+
+describe("PATCH /api/knowledge/:orgId/sources/:sourceId — editing a source's text", () => {
+    /* The Knowledge drawer offers an edit box, and it must only offer one where
+       the edit survives. A SNIPPET's text is stored on the source and is the
+       thing ingest reads. Every other type is re-derived on sync, so an edit
+       accepted there would be deleted by the next crawl with no warning. */
+
+    test("a SNIPPET's text can be edited, and the new text is what gets embedded", async () => {
+        const created = await post(`/api/knowledge/${SEED_ORG_ID}/sources`, {
+            headers: AUTH_A,
+            body: { type: "SNIPPET", name: `edit-probe-${randomSuffix()}`, content: "Refunds take ninety days." },
+        });
+        assert.equal(created.status, 201);
+        const sourceId = created.json.data.sourceId;
+        createdSourceIds.push(sourceId);
+
+        const edited = await patch(`/api/knowledge/${SEED_ORG_ID}/sources/${sourceId}`, {
+            headers: AUTH_A,
+            body: { content: "Refunds are issued within five working days." },
+        });
+        assert.equal(edited.status, 200);
+        assert.equal(edited.json.data.sourceId, sourceId, "editing must not create a second source");
+        assert.equal(edited.json.data.status, "READY", "the edit must finish embedding before it returns");
+
+        const chunks = await get(`/api/knowledge/${SEED_ORG_ID}/chunks?sourceId=${sourceId}`, { headers: AUTH_A });
+        const text = chunks.json.data.map((chunk) => chunk.text).join(" ");
+        assert.match(text, /five working days/i, "the edited text must be what the retriever sees");
+        assert.doesNotMatch(text, /ninety days/i, "the old text must be gone, not sitting alongside the new");
+    });
+
+    test("a SNIPPET can be renamed on its own", async () => {
+        const created = await post(`/api/knowledge/${SEED_ORG_ID}/sources`, {
+            headers: AUTH_A,
+            body: { type: "SNIPPET", name: `rename-probe-${randomSuffix()}`, content: "Shipping is free over $50." },
+        });
+        const sourceId = created.json.data.sourceId;
+        createdSourceIds.push(sourceId);
+
+        const renamed = await patch(`/api/knowledge/${SEED_ORG_ID}/sources/${sourceId}`, {
+            headers: AUTH_A,
+            body: { name: "Shipping policy" },
+        });
+        assert.equal(renamed.status, 200);
+        assert.equal(renamed.json.data.name, "Shipping policy");
+        assert.equal(renamed.json.data.content, "Shipping is free over $50.", "a rename must not touch the text");
+    });
+
+    test("editing the text of a FILE source is refused, and says where to edit instead", async () => {
+        // A dead end that does not name the real lever reads as a bug. The
+        // message has to point at the file, because that is what a re-sync
+        // re-reads.
+        const uploaded = await post(`/api/org/${SEED_ORG_ID}/knowledge/upload`, {
+            headers: AUTH_A,
+            body: {
+                filename: `derived-${randomSuffix()}.md`,
+                base64: Buffer.from("# Policy\n\nDerived text that a sync owns.").toString("base64"),
+            },
+        });
+        assert.equal(uploaded.status, 201);
+        const sourceId = uploaded.json.data.sourceId;
+        createdSourceIds.push(sourceId);
+
+        const refused = await patch(`/api/knowledge/${SEED_ORG_ID}/sources/${sourceId}`, {
+            headers: AUTH_A,
+            body: { content: "Text I typed that a re-sync would silently delete." },
+        });
+        assert.equal(refused.status, 409);
+        assert.match(refused.json.error, /file that was uploaded/i);
+        assert.match(refused.json.error, /overwritten/i);
+
+        const chunks = await get(`/api/knowledge/${SEED_ORG_ID}/chunks?sourceId=${sourceId}`, { headers: AUTH_A });
+        const text = chunks.json.data.map((chunk) => chunk.text).join(" ");
+        assert.doesNotMatch(text, /silently delete/i, "a refused edit must not have been partially applied");
+    });
+
+    test("a FILE source can still be renamed — the name is ours, not the document's", async () => {
+        const uploaded = await post(`/api/org/${SEED_ORG_ID}/knowledge/upload`, {
+            headers: AUTH_A,
+            body: {
+                filename: `renameable-${randomSuffix()}.md`,
+                base64: Buffer.from("# Handbook\n\nSome content.").toString("base64"),
+            },
+        });
+        const sourceId = uploaded.json.data.sourceId;
+        createdSourceIds.push(sourceId);
+
+        const renamed = await patch(`/api/knowledge/${SEED_ORG_ID}/sources/${sourceId}`, {
+            headers: AUTH_A,
+            body: { name: "Employee handbook" },
+        });
+        assert.equal(renamed.status, 200);
+        assert.equal(renamed.json.data.name, "Employee handbook");
+    });
+
+    test("an empty edit is refused rather than blanking the source", async () => {
+        const created = await post(`/api/knowledge/${SEED_ORG_ID}/sources`, {
+            headers: AUTH_A,
+            body: { type: "SNIPPET", name: `blank-probe-${randomSuffix()}`, content: "Original text." },
+        });
+        const sourceId = created.json.data.sourceId;
+        createdSourceIds.push(sourceId);
+
+        const blanked = await patch(`/api/knowledge/${SEED_ORG_ID}/sources/${sourceId}`, {
+            headers: AUTH_A,
+            body: { content: "   " },
+        });
+        assert.equal(blanked.status, 400);
+
+        const still = await get(`/api/knowledge/${SEED_ORG_ID}/chunks?sourceId=${sourceId}`, { headers: AUTH_A });
+        assert.ok(still.json.data.length >= 1, "the source must still have its chunks");
+    });
+
+    test("a request that changes nothing is refused", async () => {
+        const created = await post(`/api/knowledge/${SEED_ORG_ID}/sources`, {
+            headers: AUTH_A,
+            body: { type: "SNIPPET", name: `noop-probe-${randomSuffix()}`, content: "Text." },
+        });
+        createdSourceIds.push(created.json.data.sourceId);
+
+        const result = await patch(`/api/knowledge/${SEED_ORG_ID}/sources/${created.json.data.sourceId}`, {
+            headers: AUTH_A,
+            body: {},
+        });
+        assert.equal(result.status, 400);
+    });
+
+    test("editing a nonexistent source returns 404", async () => {
+        const result = await patch(`/api/knowledge/${SEED_ORG_ID}/sources/src_bogus`, {
+            headers: AUTH_A,
+            body: { name: "x" },
+        });
+        assert.equal(result.status, 404);
+    });
+
+    test("requires auth", async () => {
+        const result = await patch(`/api/knowledge/${SEED_ORG_ID}/sources/src_bogus`, { body: { name: "x" } });
+        assert.equal(result.status, 401);
+    });
+});
+
+describe("GET /api/knowledge/:orgId/chunks — the field names the dashboard reads", () => {
+    /* The chunk drawer rendered 790 empty boxes in production because it read
+       `chunk.content` and `chunk.heading`, and the API sends `text` and
+       `headingPath`. TypeScript could not catch it: the response is an
+       unchecked cast over JSON. Nothing on either side asserted the contract,
+       so this is where it gets asserted. Renaming a field here fails here. */
+    test("every chunk carries text and headingPath under those exact names", async () => {
+        const result = await get(`/api/knowledge/${SEED_ORG_ID}/chunks?limit=10`, { headers: AUTH_A });
+        assert.equal(result.status, 200);
+        assert.ok(result.json.data.length >= 1, "the seed must have chunks for this to prove anything");
+
+        for (const chunk of result.json.data) {
+            assert.equal(typeof chunk.text, "string", "the drawer renders `text` — not `content`");
+            assert.ok(chunk.text.length > 0, "a chunk with no text would render as an empty box");
+            assert.ok(Array.isArray(chunk.headingPath), "the drawer renders `headingPath` — not `heading`");
+            assert.equal(typeof chunk.tokenCount, "number");
+            assert.equal(typeof chunk.position, "number");
+        }
     });
 });

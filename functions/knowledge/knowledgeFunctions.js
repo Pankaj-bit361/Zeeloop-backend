@@ -13,6 +13,17 @@ const extractionFunctions = require("./extractionFunctions");
 // have yet.
 const MAX_SITEMAP_PAGES = 200;
 
+// Where each source type's text actually comes from, phrased for the person
+// reading the error rather than for us. Used when someone tries to edit text
+// that a re-sync would overwrite — telling them "not editable" without saying
+// where to go instead is how a dead end feels like a bug.
+const DERIVED_FROM = {
+    [SourceType.URL]: "the page it was crawled from",
+    [SourceType.SITEMAP]: "the pages it crawled",
+    [SourceType.FILE]: "the file that was uploaded",
+    [SourceType.SNIPPET]: "text typed here",
+};
+
 class KnowledgeFunctions {
     async listSources({ orgId }) {
         console.log("KnowledgeFunctions:listSources: orgId:", orgId);
@@ -279,6 +290,83 @@ class KnowledgeFunctions {
             return { status: 200, json: { success: true, data: fresh } };
         } catch (error) {
             console.error("KnowledgeFunctions:resyncSource: Catch block");
+            console.error(error);
+            generalFunctions.captureException(error);
+            return { status: 500, json: { success: false, error: "Internal server error, please contact support" } };
+        }
+    }
+
+
+    /* Editing a source's text.
+       
+       Only a SNIPPET has text a person wrote. For URL, SITEMAP and FILE the
+       text is derived from something upstream, and _ingestSource deletes and
+       re-embeds chunks by documentKey on every sync — so an edit saved here
+       would disappear the next time the page was crawled, without telling
+       anyone. Refusing the edit and naming the real lever is the honest
+       answer; accepting it would be a silent data-loss trap.
+
+       Renaming is allowed for every type: the name is ours, not the
+       upstream document's. */
+    async updateSource({ orgId, sourceId, name, content }) {
+        console.log("KnowledgeFunctions:updateSource: orgId:", orgId, "sourceId:", sourceId);
+        try {
+            if (!orgId || !sourceId) {
+                return { status: 400, json: { success: false, error: "Invalid request. Please pass orgId and sourceId" } };
+            }
+
+            const source = await KnowledgeSource.findOne({ orgId, sourceId });
+            if (!source) {
+                return { status: 404, json: { success: false, error: "Source not found" } };
+            }
+
+            const editsContent = content !== undefined;
+            if (editsContent && source.type !== SourceType.SNIPPET) {
+                return {
+                    status: 409,
+                    json: {
+                        success: false,
+                        error: `The text of a ${source.type} source comes from ${DERIVED_FROM[source.type]}. Change it there, then re-sync — an edit saved here would be overwritten by the next sync.`,
+                    },
+                };
+            }
+            if (editsContent && !String(content).trim()) {
+                return { status: 400, json: { success: false, error: "content cannot be empty" } };
+            }
+
+            const patch = {};
+            if (name !== undefined) {
+                if (!String(name).trim()) {
+                    return { status: 400, json: { success: false, error: "name cannot be empty" } };
+                }
+                patch.name = String(name).trim();
+            }
+            if (editsContent) patch.content = content;
+
+            if (Object.keys(patch).length === 0) {
+                return { status: 400, json: { success: false, error: "Nothing to update. Pass name or content" } };
+            }
+
+            await KnowledgeSource.updateOne({ orgId, sourceId }, patch);
+
+            // Re-embed only when the text changed. A rename does not change
+            // what the retriever matches against, so re-embedding on one would
+            // be an embedding bill for no change in behaviour.
+            if (!editsContent) {
+                const renamed = await KnowledgeSource.findOne({ orgId, sourceId });
+                return { status: 200, json: { success: true, data: renamed } };
+            }
+
+            const updated = await KnowledgeSource.findOne({ orgId, sourceId });
+            const ingest = await this._ingestSource({ source: updated });
+            if (!ingest.success) {
+                return { status: 500, json: { success: false, error: ingest.error } };
+            }
+
+            const fresh = await KnowledgeSource.findOne({ orgId, sourceId });
+            return { status: 200, json: { success: true, data: fresh } };
+        } catch (error) {
+            console.error("KnowledgeFunctions:updateSource: Catch block");
             console.error(error);
             generalFunctions.captureException(error);
             return { status: 500, json: { success: false, error: "Internal server error, please contact support" } };
