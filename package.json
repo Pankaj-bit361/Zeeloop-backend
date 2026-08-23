@@ -7,6 +7,7 @@
   "scripts": {
     "dev": "node --watch server.js",
     "start": "node server.js",
+    "seed:widget-demo": "node scripts/widgetDemo.js",
     "seed": "node scripts/seed.js",
     "reset": "node scripts/reset.js",
     "test": "NEW_RELIC_ENABLED=false node --test tests/**/*.test.js",

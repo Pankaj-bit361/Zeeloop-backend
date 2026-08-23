@@ -149,7 +149,14 @@ async function main() {
     await mongoose.disconnect();
 }
 
-main().catch((error) => {
-    console.error(error);
-    process.exit(1);
-});
+// Guarded like seed.js and reset.js: without this, merely requiring the file
+// runs it against whatever MONGODB_URI is set — which by default is production.
+// That has already happened once on this project.
+if (require.main === module) {
+    main().catch((error) => {
+        console.error(error);
+        process.exit(1);
+    });
+}
+
+module.exports = { main };
