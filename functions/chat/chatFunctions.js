@@ -261,13 +261,22 @@ class ChatFunctions {
                 .limit(50)
                 .lean();
 
-            await Message.create({
+            const visitorMessage = await Message.create({
                 orgId: org.orgId,
                 messageId: generalFunctions.generateId(IdPrefix.MESSAGE),
                 conversationId,
                 role: MessageRole.USER,
                 content,
             });
+
+            // An agent with this thread open in the dashboard learns about the
+            // visitor's own message the same way the visitor's other tabs learn
+            // about the assistant's reply below — over the socket, not a poll.
+            // This was the missing half: only the assistant/human-agent replies
+            // were ever published, so a dashboard subscribed to this channel
+            // would sit silent through the exact event it most needs to know
+            // about — the customer actually saying something.
+            realtimeHub.publish(org.orgId, conversationId, { type: "message", message: visitorMessage.toJSON() });
 
             // Quota is checked after the question is stored, not before (§0.3).
             // A workspace that hits its ceiling still wants to see what its
