@@ -381,6 +381,13 @@ class WizardFunctions {
                         origin: seen.origin,
                         firstConversationAt: conversation ? conversation.createdAt : null,
                         snippet: this.installSnippet({ org }),
+                        // Raw ingredients, alongside the assembled snippet above. The
+                        // dashboard's Install tab composes React/Vue/Angular/GTM
+                        // variants from these rather than regexing them back out of
+                        // the HTML string — one source of truth, no string-parsing
+                        // to keep in sync with installSnippet()'s own template.
+                        publicKey: org.publicKey,
+                        apiUrl: config.API_URL,
                     },
                 },
             };
@@ -392,9 +399,15 @@ class WizardFunctions {
         }
     }
 
+    // §1.6 step 5. `window.zealoop` — NOT `zealoopSettings` — is the contract
+    // the loader actually reads (widget/src/loader.ts and the npm SDK both do
+    // `{ ...(window.zealoop || {}) }`). This drifted from that once already:
+    // the snippet set `zealoopSettings`, the loader read `zealoop`, and the
+    // loader's own missing-publicKey guard means that failure is silent — no
+    // thrown error, just a widget that never appears. Pinned by a test now.
     installSnippet({ org }) {
         return `<script>
-  window.zealoopSettings = { publicKey: "${org.publicKey}" };
+  window.zealoop = { publicKey: "${org.publicKey}" };
 </script>
 <script async src="${config.API_URL}/widget.js"></script>`;
     }
