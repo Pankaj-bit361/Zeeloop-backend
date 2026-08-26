@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Intercom vs Zealoop — side by side</title>
+  <style>
+    body { margin: 0; font-family: -apple-system, "Segoe UI", sans-serif; background: #f5f5f4; color: #1c1917; }
+    .bar { background: #0c0a09; color: #fff; padding: 18px 28px; font-size: 15px; }
+    .bar b { font-weight: 700; }
+    main { max-width: 760px; margin: 48px auto; padding: 0 24px; line-height: 1.7; }
+    .split { display: flex; gap: 16px; margin-top: 28px; }
+    .side { flex: 1; background: #fff; border: 1px solid #e7e5e4; border-radius: 14px; padding: 20px; }
+    .side h3 { margin: 0 0 6px; font-size: 15px; }
+    .side p { margin: 0; font-size: 13.5px; color: #57534e; }
+    .tag { display: inline-block; font-size: 11px; font-weight: 700; letter-spacing: .5px; text-transform: uppercase; padding: 3px 8px; border-radius: 999px; margin-bottom: 10px; }
+    .tag.left { background: #ccfbf1; color: #0f766e; }
+    .tag.right { background: #e0e7ff; color: #3730a3; }
+  </style>
+</head>
+<body>
+  <div class="bar"><b>Compare mode</b> — Intercom bottom-right, Zealoop bottom-left. Same page, open both.</div>
+  <main>
+    <h1>Side-by-side</h1>
+    <p>Both messengers are live on this page. Open each, walk the same flows — home, ask a question,
+      help articles — and compare the feel. Zealoop answers here are real (grounded pipeline);
+      Intercom shows whatever the <code>xpc66iy7</code> workspace is configured with.</p>
+    <div class="split">
+      <div class="side">
+        <span class="tag left">Bottom-left</span>
+        <h3>Zealoop</h3>
+        <p>Real backend on this machine. Grounded answers with the Answer Receipt, verified before display.</p>
+      </div>
+      <div class="side">
+        <span class="tag right">Bottom-right</span>
+        <h3>Intercom</h3>
+        <p>Loaded from widget.intercom.io with your app_id. Requires the workspace to exist and allow this origin.</p>
+      </div>
+    </div>
+  </main>
+
+  <!-- Zealoop — bottom-left so the two don't overlap -->
+  <script>
+    window.zealoop = { publicKey: "pk_live_zea_4Jw9TqXhK2mNvL8s", position: "bottom-left" };
+    (function () {
+      var i = function () { i.q.push(arguments); };
+      i.q = []; window.Zealoop = i;
+      var s = document.createElement("script");
+      s.async = true; s.src = "/widget.js";
+      document.head.appendChild(s);
+    })();
+  </script>
+
+  <!-- Intercom — their standard loader, bottom-right (default) -->
+  <script>
+    window.intercomSettings = { api_base: "https://api-iam.intercom.io", app_id: "xpc66iy7" };
+  </script>
+  <script>
+    (function () {
+      var w = window; var ic = w.Intercom;
+      if (typeof ic === "function") { ic("reattach_activator"); ic("update", w.intercomSettings); }
+      else {
+        var d = document; var i = function () { i.c(arguments); };
+        i.q = []; i.c = function (args) { i.q.push(args); };
+        w.Intercom = i;
+        var l = function () {
+          var s = d.createElement("script");
+          s.type = "text/javascript"; s.async = true;
+          s.src = "https://widget.intercom.io/widget/xpc66iy7";
+          var x = d.getElementsByTagName("script")[0];
+          x.parentNode.insertBefore(s, x);
+        };
+        if (document.readyState === "complete") l();
+        else if (w.attachEvent) w.attachEvent("onload", l);
+        else w.addEventListener("load", l, false);
+      }
+    })();
+  </script>
+</body>
+</html>

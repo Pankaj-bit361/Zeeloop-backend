@@ -1,0 +1,160 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>AcmeShip — demo host page</title>
+  <!-- This page is deliberately hostile: aggressive global CSS that would
+       destroy any widget not properly isolated. If the messenger looks
+       perfect here, it looks perfect anywhere. -->
+  <style>
+    * { box-sizing: content-box !important; font-family: "Comic Sans MS", cursive !important; letter-spacing: 2px !important; }
+    button { background: red !important; border-radius: 0 !important; border: 5px dashed lime !important; width: 300px !important; }
+    svg { fill: hotpink !important; }
+    div { border: 1px dotted rgba(255, 0, 255, 0.2); }
+    p, span { text-transform: uppercase !important; }
+    body { margin: 0; background: #f4f1ea; }
+    .site-header { background: #1d3557; color: #fff; padding: 22px 32px; font-size: 22px; z-index: 99999; position: relative; }
+    .content { max-width: 720px; margin: 40px auto; padding: 0 24px; line-height: 1.7; color: #333; }
+    .card { background: #fff; padding: 24px; margin: 16px 0; box-shadow: 0 2px 8px rgba(0,0,0,.08); }
+  </style>
+</head>
+<body>
+  <header class="site-header">🚚 AcmeShip — totally real customer store</header>
+
+  <!-- Theme playground — demo-only controls. Shielded from this page's hostile
+       CSS so it stays usable; the widget needs no shield, which is the point. -->
+  <style>
+    .playground, .playground * {
+      font-family: -apple-system, "Segoe UI", sans-serif !important;
+      letter-spacing: 0 !important; text-transform: none !important;
+      border: none !important; box-sizing: border-box !important;
+    }
+    .playground {
+      position: fixed; left: 16px; bottom: 16px; z-index: 999;
+      width: 230px; background: #fff !important;
+      border: 1px solid #e2e0de !important; border-radius: 14px !important;
+      box-shadow: 0 10px 34px rgba(0,0,0,.14); padding: 14px; font-size: 12px; color: #444;
+    }
+    .playground h4 { margin: 0 0 2px; font-size: 12.5px; color: #111; }
+    .playground .pg-label { margin: 10px 0 5px; font-size: 10.5px; font-weight: 700; color: #999; text-transform: uppercase !important; letter-spacing: .6px !important; }
+    .playground .pg-row { display: flex; flex-wrap: wrap; gap: 5px; }
+    .playground button {
+      all: unset; cursor: pointer; background: #f4f3f1 !important; border-radius: 8px !important;
+      padding: 4px 9px; font-size: 11.5px; color: #333; font-family: inherit !important;
+    }
+    .playground button:hover { background: #e9e7e4 !important; }
+    .playground button.on { background: #111 !important; color: #fff; }
+    .playground .pg-dot { width: 22px; height: 22px; border-radius: 50% !important; padding: 0; }
+    .playground .pg-dot.on { outline: 2px solid #111; outline-offset: 2px; }
+    .playground .pg-reset { display: inline-block; margin-top: 10px; color: #888; font-size: 11px; cursor: pointer; }
+    .playground .pg-reset:hover { color: #111; }
+  </style>
+  <div class="playground" id="playground">
+    <h4>🎨 Theme playground</h4>
+    <div class="pg-label">Theme</div>
+    <div class="pg-row" data-param="theme">
+      <button data-value="">Light</button>
+      <button data-value="dark">Dark</button>
+      <button data-value="auto">Auto</button>
+    </div>
+    <div class="pg-label">Accent</div>
+    <div class="pg-row" data-param="accent">
+      <button class="pg-dot" data-value="" style="background:#0c0a09 !important" title="Ink (default)"></button>
+      <button class="pg-dot" data-value="#0d9488" style="background:#0d9488 !important" title="Teal"></button>
+      <button class="pg-dot" data-value="#7c3aed" style="background:#7c3aed !important" title="Violet"></button>
+      <button class="pg-dot" data-value="#2563eb" style="background:#2563eb !important" title="Blue"></button>
+      <button class="pg-dot" data-value="#e11d48" style="background:#e11d48 !important" title="Rose"></button>
+      <button class="pg-dot" data-value="#d97706" style="background:#d97706 !important" title="Amber"></button>
+    </div>
+    <div class="pg-label">Background</div>
+    <div class="pg-row" data-param="bg">
+      <button data-value="">Aurora</button>
+      <button data-value="mint">Mint</button>
+      <button data-value="sky">Sky</button>
+      <button data-value="sunset">Sunset</button>
+      <button data-value="ink">Ink</button>
+    </div>
+    <span class="pg-reset" id="pg-reset">↺ Reset everything</span>
+  </div>
+  <script>
+    (function () {
+      var q = new URLSearchParams(location.search);
+      document.querySelectorAll(".playground .pg-row").forEach(function (row) {
+        var param = row.dataset.param;
+        var current = q.get(param) || "";
+        row.querySelectorAll("button").forEach(function (btn) {
+          if ((btn.dataset.value || "") === current) btn.classList.add("on");
+          btn.addEventListener("click", function () {
+            var next = new URLSearchParams(location.search);
+            if (btn.dataset.value) next.set(param, btn.dataset.value);
+            else next.delete(param);
+            location.search = next.toString();
+          });
+        });
+      });
+      document.getElementById("pg-reset").addEventListener("click", function () {
+        var next = new URLSearchParams();
+        var conv = new URLSearchParams(location.search).get("conv");
+        if (conv) next.set("conv", conv);
+        location.search = next.toString();
+      });
+    })();
+  </script>
+  <main class="content">
+    <div class="card">
+      <h1>Track your order</h1>
+      <p>This is a stand-in for a customer's website, with intentionally horrible global CSS
+        (content-box sizing, red buttons, Comic Sans everywhere). The Zealoop launcher in the
+        corner must be completely unaffected.</p>
+      <button>A hostile host button</button>
+    </div>
+    <div class="card"><p>Scroll filler.</p></div>
+    <div class="card"><p>More filler so the page scrolls.</p></div>
+    <div class="card"><p>Even more filler.</p></div>
+  </main>
+
+  <!-- Demo helper: /widget/demo?conv=conv_widget_demo_rich preloads the seeded
+       conversations; ?conv=fresh clears everything. Not the customer snippet. -->
+  <script>
+    (function () {
+      var q = new URLSearchParams(location.search);
+      var conv = q.get("conv");
+      var pk = q.get("pk") || "pk_live_zea_4Jw9TqXhK2mNvL8s";
+      if (conv === "fresh") {
+        localStorage.removeItem("zealoop:conv:" + pk);
+        localStorage.removeItem("zealoop:convs:" + pk);
+      } else if (conv) {
+        localStorage.setItem("zealoop:conv:" + pk, conv);
+        localStorage.setItem(
+          "zealoop:convs:" + pk,
+          JSON.stringify([conv, "conv_widget_demo_resolved"])
+        );
+      }
+    })();
+  </script>
+
+  <!-- The real snippet a customer would paste. Theme previews via URL:
+       ?theme=dark  ?accent=%230d9488  ?bg=sunset|mint|sky|ink|aurora -->
+  <script>
+    window.zealoop = { publicKey: "pk_live_zea_4Jw9TqXhK2mNvL8s" };
+    (function () {
+      var q = new URLSearchParams(location.search);
+      // ?pk=… previews any workspace's widget — e.g. your own org's key
+      if (q.get("pk")) window.zealoop.publicKey = q.get("pk");
+      if (q.get("theme")) window.zealoop.theme = q.get("theme");
+      if (q.get("accent")) window.zealoop.accentColor = q.get("accent");
+      if (q.get("bg")) window.zealoop.background = q.get("bg");
+    })();
+    (function () {
+      var i = function () { i.q.push(arguments); };
+      i.q = [];
+      window.Zealoop = i;
+      var s = document.createElement("script");
+      s.async = true;
+      s.src = "/widget.js";
+      document.head.appendChild(s);
+    })();
+  </script>
+</body>
+</html>

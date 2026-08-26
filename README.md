@@ -26,6 +26,27 @@ resyncing every source. Reranking is optional Voyage
 falls back to fusion order. If you change chat models, update `PRICE_PER_MTOK`
 in `config/config.js` so per-turn cost attribution stays accurate.
 
+## The widget build (served from this repo)
+
+`/widget.js` and `/widget/frame/` — the URL in every customer's install
+snippet — are served from `public/widget`, a copy of the widget repo's build
+vendored into this repository. It has to live here because this repo is what
+gets deployed; the sibling `../widget` checkout on a laptop is not on the
+server. (Production served 500 on `/widget.js` for as long as the server read
+from the sibling.)
+
+After any change in the widget repo:
+
+```bash
+cd ../widget && npm run build
+cd ../backend && npm run widget:sync     # copies ../widget/dist → public/widget
+git add public/widget && git commit
+```
+
+Locally, `../widget/dist` is preferred when present so a fresh build shows
+immediately; the suite fails if it differs from `public/widget`, so the copy
+cannot be forgotten. `WIDGET_DIST=/path` overrides both.
+
 ## Atlas search indexes (required for retrieval)
 
 Without both indexes `_hybridSearch` returns empty and the agent abstains.

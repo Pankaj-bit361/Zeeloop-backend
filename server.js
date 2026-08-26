@@ -177,7 +177,40 @@ app.use("/api/widget", widgetCors, widgetRateLimit, enforceOriginAllowlist, widg
 // SAMEORIGIN) would block exactly that, so these routes override both. That is
 // safe: the frame holds no session — every request inside it re-authenticates
 // with the org publicKey.
-const widgetDist = path.join(__dirname, "../widget/dist");
+/* Where the widget build lives.
+
+   Deployed: public/widget, a copy vendored into THIS repository by
+   `npm run widget:sync`. It has to be in this repo, because this repo is what
+   gets deployed — the sibling ../widget checkout that exists on a laptop is
+   not on the server, and reading from it is how production served 500 on the
+   one URL every customer's install snippet points at.
+
+   Developing: ../widget/dist wins when it is present, so a widget change is
+   visible the moment it is built, without a sync step in the loop. The suite
+   fails if that fresh build and the vendored copy differ, so the copy cannot
+   be forgotten. WIDGET_DIST overrides both. */
+const widgetDist = (() => {
+    const fs = require("fs");
+    const candidates = [
+        process.env.WIDGET_DIST,
+        path.join(__dirname, "../widget/dist"),
+        path.join(__dirname, "public/widget"),
+    ].filter(Boolean);
+    const found = candidates.find((dir) => fs.existsSync(path.join(dir, "widget.js")));
+    if (!found) {
+        console.error("Server: NO WIDGET BUILD FOUND — /widget.js will answer 503. Run `npm run widget:sync`.");
+        return path.join(__dirname, "public/widget");
+    }
+    console.log("Server: widget served from", path.relative(__dirname, found) || found);
+    return found;
+})();
+const widgetReady = require("fs").existsSync(path.join(widgetDist, "widget.js"));
+// A missing build is a deployment gap, not a bug: say so, rather than the
+// generic 500 that sendFile-on-nothing used to produce.
+const requireWidgetBuild = (req, res, next) => {
+    if (widgetReady) return next();
+    return res.status(503).json({ success: false, error: "The widget build is not deployed on this server" });
+};
 // §8.4 — the frame's own CSP. `frame-ancestors *` is required (the whole point
 // is embedding on customer sites) but everything else is locked down, because
 // the frame renders content that originates with the customer's own knowledge
@@ -227,7 +260,7 @@ const demoPage = (req, res, next) => {
     res.setHeader("Cross-Origin-Resource-Policy", "cross-origin");
     next();
 };
-app.get("/widget.js", widgetCors, embeddable, (req, res) => {
+app.get("/widget.js", widgetCors, embeddable, requireWidgetBuild, (req, res) => {
     res.sendFile(path.join(widgetDist, "widget.js"), { maxAge: "5m" });
 });
 app.get("/widget/demo", demoPage, (req, res) => {
@@ -247,7 +280,7 @@ app.get("/widget/theme-lab", demoPage, (req, res) => {
 app.get("/widget/theme-lab.js", demoPage, (req, res) => {
     res.sendFile(path.join(widgetDist, "theme-lab.js"));
 });
-app.use("/widget/frame", embeddable, express.static(path.join(widgetDist, "frame"), { maxAge: "5m" }));
+app.use("/widget/frame", embeddable, requireWidgetBuild, express.static(path.join(widgetDist, "frame"), { maxAge: "5m" }));
 app.use("/api/auth", dashboardCors, authRoutes);
 app.use("/api/knowledge", dashboardCors, knowledgeRoutes);
 app.use("/api/org", dashboardCors, actionRoutes);
