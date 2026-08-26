@@ -4,8 +4,10 @@ const {
     PlanId,
     SubscriptionStatus,
     BillingProvider,
+    Currency,
 } = require("../../config/enums");
-const { getPlan, TRIAL_DAYS, GRACE_PERIOD_DAYS } = require("../../config/plans");
+const { PLANS, getPlan, getPrice, TRIAL_DAYS, GRACE_PERIOD_DAYS } = require("../../config/plans");
+const geoFunctions = require("../utilFunctions/geoFunctions");
 const Subscription = require("../../models/billing/subscription");
 const WebhookEvent = require("../../models/billing/webhookEvent");
 const Org = require("../../models/org/org");
@@ -18,8 +20,8 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 class BillingFunctions {
     // ── Public Functions ─────────────────────────────────────────────
 
-    async getBilling({ orgId }) {
-        console.log("BillingFunctions:getBilling: orgId:", orgId);
+    async getBilling({ orgId, country }) {
+        console.log("BillingFunctions:getBilling: orgId:", orgId, "country:", country);
         try {
             if (!orgId) {
                 return { status: 400, json: { success: false, error: "Invalid request. Please pass orgId" } };
@@ -35,6 +37,17 @@ class BillingFunctions {
             const plan = getPlan(effective.planId);
             const usage = await usageFunctions.getCurrentUsage({ orgId, subscription });
 
+            const resolved = await this._resolveCurrency({ orgId, country, subscription });
+            if (!resolved.success) {
+                return { status: 404, json: { success: false, error: "Org not found" } };
+            }
+            const { currency } = resolved;
+
+            // Every plan's price in THIS workspace's currency, so the dashboard
+            // never holds a price list of its own to drift.
+            const prices = {};
+            for (const id of Object.keys(PLANS)) prices[id] = getPrice(id, currency);
+
             return {
                 status: 200,
                 json: {
@@ -44,9 +57,18 @@ class BillingFunctions {
                             id: plan.id,
                             name: plan.name,
                             priceUsd: plan.priceUsd,
+                            price: getPrice(plan.id, currency),
                             features: plan.features,
                             limits: plan.limits,
                         },
+                        currency,
+                        country: resolved.country,
+                        // Locked once a provider subscription exists: it was
+                        // created in one currency and cannot move.
+                        currencyLocked: resolved.locked,
+                        // INR list prices include GST; USD is zero-rated export.
+                        taxIncluded: currency === Currency.INR,
+                        prices,
                         // The plan they are paying for, which can differ from the
                         // effective one while past due or after cancelling.
                         subscribedPlan: subscription.plan,
@@ -71,8 +93,8 @@ class BillingFunctions {
         }
     }
 
-    async createCheckout({ orgId, planId, email, name }) {
-        console.log("BillingFunctions:createCheckout: orgId:", orgId, "planId:", planId);
+    async createCheckout({ orgId, planId, email, name, country }) {
+        console.log("BillingFunctions:createCheckout: orgId:", orgId, "planId:", planId, "country:", country);
         try {
             if (!orgId || !planId) {
                 return { status: 400, json: { success: false, error: "Invalid request. Please pass orgId and planId" } };
@@ -88,20 +110,38 @@ class BillingFunctions {
                 return { status: 503, json: { success: false, error: "Billing is not configured on this deployment" } };
             }
 
-            const variantId = config.BILLING_VARIANT_IDS[planId];
-            if (!variantId) {
-                return { status: 503, json: { success: false, error: `No provider variant configured for ${planId}` } };
-            }
-
             const org = await Org.findOne({ orgId });
             if (!org) {
                 return { status: 404, json: { success: false, error: "Org not found" } };
+            }
+
+            const ensured = await this._ensureSubscription({ orgId });
+            if (!ensured.success) {
+                return { status: 500, json: { success: false, error: "Could not resolve subscription" } };
+            }
+            const resolved = await this._resolveCurrency({ orgId, country, subscription: ensured.subscription, org });
+            const { currency } = resolved;
+
+            /* The provider plan is looked up by currency FIRST. Handing an
+               Indian workspace the USD plan is not a fallback — Razorpay has
+               said their card will not clear it — so a missing INR id is a
+               503 that names the gap, never a quiet substitution. */
+            const variantId = (config.BILLING_VARIANT_IDS[currency] || {})[planId];
+            if (!variantId) {
+                return {
+                    status: 503,
+                    json: {
+                        success: false,
+                        error: `${currency} billing for the ${getPlan(planId).name} plan is not set up yet on this deployment`,
+                    },
+                };
             }
 
             const result = await provider.createCheckout({
                 orgId,
                 planId,
                 variantId,
+                currency,
                 email: email || org.ownerEmail,
                 name: name || org.name,
                 redirectUrl: `${config.APP_URL}/billing?checkout=success`,
@@ -120,6 +160,52 @@ class BillingFunctions {
             return { status: 200, json: { success: true, data: { url: result.url, embed: result.embed || null } } };
         } catch (error) {
             console.error("BillingFunctions:createCheckout: Catch block");
+            console.error(error);
+            generalFunctions.captureException(error);
+            return { status: 500, json: { success: false, error: "Internal server error, please contact support" } };
+        }
+    }
+
+    /* PATCH .../billing/currency — the person overrides the detected default.
+       Allowed only while no provider subscription exists: the provider creates
+       a subscription in one currency and it stays there, so flipping this
+       underneath a live one would show rupee prices for a dollar charge. */
+    async setCurrency({ orgId, currency }) {
+        console.log("BillingFunctions:setCurrency: orgId:", orgId, "currency:", currency);
+        try {
+            if (!orgId || !currency) {
+                return { status: 400, json: { success: false, error: "Invalid request. Please pass orgId and currency" } };
+            }
+            if (!Object.values(Currency).includes(currency)) {
+                return {
+                    status: 400,
+                    json: { success: false, error: `currency must be one of ${Object.values(Currency).join(", ")}` },
+                };
+            }
+            const ensured = await this._ensureSubscription({ orgId });
+            if (!ensured.success) {
+                return { status: 500, json: { success: false, error: "Could not resolve subscription" } };
+            }
+            if (this._currencyLocked({ subscription: ensured.subscription })) {
+                return {
+                    status: 409,
+                    json: {
+                        success: false,
+                        error: "Your subscription is already billed in one currency. Cancel it before switching.",
+                    },
+                };
+            }
+            const updated = await Org.findOneAndUpdate(
+                { orgId },
+                { "billing.currency": currency },
+                { new: true }
+            );
+            if (!updated) {
+                return { status: 404, json: { success: false, error: "Org not found" } };
+            }
+            return { status: 200, json: { success: true, data: { currency } } };
+        } catch (error) {
+            console.error("BillingFunctions:setCurrency: Catch block");
             console.error(error);
             generalFunctions.captureException(error);
             return { status: 500, json: { success: false, error: "Internal server error, please contact support" } };
@@ -314,6 +400,48 @@ class BillingFunctions {
         return { planId: PlanId.FREE, reason: "EXPIRED" };
     }
 
+    /* A subscription that has reached a provider is in that provider's
+       currency for good. NONE means the workspace has never checked out —
+       free, or seeded — and is still free to choose. */
+    _currencyLocked({ subscription }) {
+        return Boolean(subscription && subscription.provider && subscription.provider !== BillingProvider.NONE);
+    }
+
+    /* The workspace's currency, settling it on first sight.
+
+       Order: what the subscription was created in (the truth, once it exists),
+       then what the workspace chose or was assigned, then the country this
+       request arrived from. Whatever is decided is written back, so the price
+       list a person sees today is the one they see tomorrow — a workspace
+       whose prices changed currency between two page loads because someone
+       opened it from a hotel wifi would not trust either. */
+    async _resolveCurrency({ orgId, country, subscription, org }) {
+        const workspace = org || (await Org.findOne({ orgId }));
+        if (!workspace) return { success: false };
+
+        const locked = this._currencyLocked({ subscription });
+        let currency = (locked && subscription.currency) || (workspace.billing && workspace.billing.currency) || null;
+        const patch = {};
+
+        if (!currency) {
+            currency = geoFunctions.currencyForCountry(country);
+            patch["billing.currency"] = currency;
+        }
+        if (country && !(workspace.billing && workspace.billing.country)) {
+            patch["billing.country"] = country;
+        }
+        if (Object.keys(patch).length) {
+            await Org.updateOne({ orgId }, patch);
+        }
+
+        return {
+            success: true,
+            currency,
+            locked,
+            country: (workspace.billing && workspace.billing.country) || country || null,
+        };
+    }
+
     async _applyEvent({ event }) {
         if (!event.orgId) {
             // Without custom_data there is no workspace to attribute this to.
@@ -332,6 +460,7 @@ class BillingFunctions {
         if (event.providerSubscriptionId) subscription.providerSubscriptionId = event.providerSubscriptionId;
         if (event.providerCustomerId) subscription.providerCustomerId = event.providerCustomerId;
         if (event.providerVariantId) subscription.providerVariantId = event.providerVariantId;
+        if (event.currency && Object.values(Currency).includes(event.currency)) subscription.currency = event.currency;
         if (event.updatePaymentMethodUrl) subscription.updatePaymentMethodUrl = event.updatePaymentMethodUrl;
         if (event.customerPortalUrl) subscription.customerPortalUrl = event.customerPortalUrl;
         if (event.trialEndsAt) subscription.trialEndsAt = event.trialEndsAt;

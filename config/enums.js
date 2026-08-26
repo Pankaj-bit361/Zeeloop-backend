@@ -185,6 +185,14 @@ const SubscriptionStatus = {
     EXPIRED: "EXPIRED",
 };
 
+// The two currencies a workspace can be billed in. Chosen once, from the
+// country the workspace signed up from, and locked the moment a subscription
+// exists — a provider subscription is created in one currency and cannot move.
+const Currency = {
+    USD: "USD",
+    INR: "INR",
+};
+
 const BillingProvider = {
     LEMON_SQUEEZY: "LEMON_SQUEEZY",
     RAZORPAY: "RAZORPAY",
@@ -555,6 +563,7 @@ const IdPrefix = {
 };
 
 module.exports = {
+    Currency,
     TurnOutcome,
     AccessType,
     BlockReason,

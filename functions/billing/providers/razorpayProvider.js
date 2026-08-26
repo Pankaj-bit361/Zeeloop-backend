@@ -143,6 +143,7 @@ class RazorpayProvider {
             eventType,
             orgId: notes.org_id || notes.orgId || null,
             planId: notes.plan_id || notes.planId || null,
+            currency: notes.currency || null,
             providerSubscriptionId: subscription?.id ? String(subscription.id) : null,
             providerCustomerId: entity.customer_id ? String(entity.customer_id) : null,
             // Razorpay's plan id is what our BILLING_VARIANT_IDS map holds.
@@ -163,7 +164,7 @@ class RazorpayProvider {
 
        `variantId` is a Razorpay plan id — the plan carries the amount and
        currency, so nothing about price is sent from here. */
-    async createCheckout({ orgId, planId, variantId, email, name, redirectUrl }) {
+    async createCheckout({ orgId, planId, variantId, currency, email, name, redirectUrl }) {
         const response = await fetch(`${API_BASE}/subscriptions`, {
             method: "POST",
             headers: {
@@ -181,6 +182,9 @@ class RazorpayProvider {
                 notes: {
                     org_id: orgId,
                     plan_id: planId,
+                    // The plan carries the real currency; this is so the
+                    // webhook can stamp it on our row without a second call.
+                    currency: currency || "",
                     // Razorpay has no redirect_url on subscriptions the way a
                     // checkout session would; kept here so support can see
                     // where the customer was sent back to.

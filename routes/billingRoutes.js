@@ -3,12 +3,16 @@ const { reqOrgOwnerAuth, requireRole, OWNER_OR_ADMIN } = require("../middlewares
 const billingFunctions = require("../functions/billing/billingFunctions");
 const usageFunctions = require("../functions/billing/usageFunctions");
 const generalFunctions = require("../functions/utilFunctions/generalFunctions");
+const geoFunctions = require("../functions/utilFunctions/geoFunctions");
 
 const router = express.Router();
 
 router.get("/:orgId/billing", reqOrgOwnerAuth, async (req, res) => {
     try {
-        const { status, json } = await billingFunctions.getBilling({ orgId: req.params.orgId });
+        const { status, json } = await billingFunctions.getBilling({
+            orgId: req.params.orgId,
+            country: geoFunctions.countryFromRequest(req),
+        });
         return res.status(status).json(json);
     } catch (error) {
         console.error(`Billing router ${req.path} catch block`);
@@ -40,6 +44,22 @@ router.post("/:orgId/billing/checkout", reqOrgOwnerAuth, requireRole(...OWNER_OR
             planId: req.body.planId,
             email: req.body.email,
             name: req.body.name,
+            country: geoFunctions.countryFromRequest(req),
+        });
+        return res.status(status).json(json);
+    } catch (error) {
+        console.error(`Billing router ${req.path} catch block`);
+        console.error(error);
+        generalFunctions.captureException(error);
+        return res.status(500).json({ success: false, error: "Internal server error, please contact support" });
+    }
+});
+
+router.patch("/:orgId/billing/currency", reqOrgOwnerAuth, requireRole(...OWNER_OR_ADMIN), async (req, res) => {
+    try {
+        const { status, json } = await billingFunctions.setCurrency({
+            orgId: req.params.orgId,
+            currency: req.body.currency,
         });
         return res.status(status).json(json);
     } catch (error) {

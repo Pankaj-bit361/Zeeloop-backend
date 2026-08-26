@@ -1,5 +1,5 @@
 const mongoose = require("mongoose");
-const { PlanId, SubscriptionStatus, BillingProvider } = require("../../config/enums");
+const { PlanId, SubscriptionStatus, BillingProvider, Currency } = require("../../config/enums");
 
 // One row per workspace. Kept separate from Org rather than nested because
 // billing state changes on a completely different clock from workspace config —
@@ -18,6 +18,9 @@ const subscriptionSchema = new mongoose.Schema(
         providerCustomerId: { type: String, default: null },
         providerSubscriptionId: { type: String, default: null, index: true },
         providerVariantId: { type: String, default: null },
+        // The currency the provider subscription was created in. Round-trips
+        // through the checkout notes so the webhook can stamp it here.
+        currency: { type: String, enum: [...Object.values(Currency), null], default: null },
 
         // The billing period drives usage windows. currentPeriodEnd is what the
         // usage reset compares against, so it must always be set — a trial gets

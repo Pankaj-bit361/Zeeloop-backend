@@ -8,6 +8,7 @@ const Org = require("../../models/org/org");
 const { AuthProvider, TokenPurpose, MemberRole, MemberStatus, IdPrefix, PlanId } = require("../../config/enums");
 const { getPlan } = require("../../config/plans");
 const generalFunctions = require("../utilFunctions/generalFunctions");
+const geoFunctions = require("../utilFunctions/geoFunctions");
 const sessionFunctions = require("../utilFunctions/sessionFunctions");
 const attributeFunctions = require("../config/attributeFunctions");
 const subscriptionFunctions = require("../billing/subscriptionFunctions");
@@ -265,7 +266,7 @@ class AuthFunctions {
     // POST /api/auth/orgs — onboarding. Creates the workspace and the owner seat
     // in one step, because an org whose ownerEmail has no Member row is a
     // workspace nobody can administer.
-    async createOrg({ account, name, website }) {
+    async createOrg({ account, name, website, country }) {
         console.log("AuthFunctions:createOrg: accountId:", account && account.accountId, "name:", name);
         try {
             if (!account) {
@@ -290,6 +291,10 @@ class AuthFunctions {
                 agent: { name: "Zea", greeting: `Hi! Ask me anything about ${orgName}.`, language: "en" },
                 widget: { position: "bottom-right", allowedOrigins: [] },
                 credits: { plan: PlanId.FREE, conversationsUsed: 0, conversationsLimit: getPlan(PlanId.FREE).limits.conversations },
+                // Decided here, at the first request that tells us where the
+                // workspace is, so the billing page is in the right currency
+                // from its very first load.
+                billing: { country: country || null, currency: geoFunctions.currencyForCountry(country) },
             });
 
             await Member.create({

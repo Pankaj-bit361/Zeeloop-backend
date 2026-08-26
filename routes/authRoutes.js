@@ -1,4 +1,5 @@
 const express = require("express");
+const geoFunctions = require("../functions/utilFunctions/geoFunctions");
 const authFunctions = require("../functions/auth/authFunctions");
 const generalFunctions = require("../functions/utilFunctions/generalFunctions");
 const sessionFunctions = require("../functions/utilFunctions/sessionFunctions");
@@ -108,6 +109,7 @@ router.post("/orgs", reqSessionAuth, async (req, res) => {
             account: req.account,
             name: req.body.name,
             website: req.body.website,
+            country: geoFunctions.countryFromRequest(req),
         });
         return res.status(status).json(json);
     } catch (error) {

@@ -220,9 +220,21 @@ module.exports = {
        Test-mode plans are DIFFERENT ids under the same names — a test key with
        these ids 404s at checkout. Override all three via env for that. */
     BILLING_VARIANT_IDS: {
-        STARTER: process.env.BILLING_VARIANT_STARTER || "plan_TQAQggSVolBKOh",
-        GROWTH: process.env.BILLING_VARIANT_GROWTH || "plan_TQARaZsJoMNYRs",
-        SCALE: process.env.BILLING_VARIANT_SCALE || "plan_TQARvK1Ly2fm3z",
+        USD: {
+            STARTER: process.env.BILLING_VARIANT_STARTER || "plan_TQAQggSVolBKOh",
+            GROWTH: process.env.BILLING_VARIANT_GROWTH || "plan_TQARaZsJoMNYRs",
+            SCALE: process.env.BILLING_VARIANT_SCALE || "plan_TQARvK1Ly2fm3z",
+        },
+        /* INR plans are separate Razorpay plans — a plan is created in one
+           currency and stays there. No defaults yet: until these are created
+           on the Razorpay dashboard and committed here, an Indian workspace
+           clicking Upgrade gets a 503 that says so, rather than a USD plan its
+           card cannot pay. */
+        INR: {
+            STARTER: process.env.BILLING_VARIANT_STARTER_INR || null,
+            GROWTH: process.env.BILLING_VARIANT_GROWTH_INR || null,
+            SCALE: process.env.BILLING_VARIANT_SCALE_INR || null,
+        },
     },
 
     // ── Abuse and cost control (§8.2) ────────────────────────────────

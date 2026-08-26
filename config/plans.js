@@ -1,4 +1,4 @@
-const { PlanId, FeatureKey } = require("./enums");
+const { PlanId, FeatureKey, Currency } = require("./enums");
 
 // The plan registry. Everything about what a workspace may do lives here, so
 // pricing and packaging changes are an edit to this file rather than a hunt
@@ -33,6 +33,22 @@ const { PlanId, FeatureKey } = require("./enums");
 // `limits` are per billing period. null means unlimited — checked explicitly
 // everywhere rather than relying on Infinity arithmetic.
 
+/* INR prices are a SEPARATE price list, not a conversion.
+
+   Razorpay told us plainly: an Indian card will not clear a USD plan on this
+   account. So Indian workspaces are billed in rupees on INR plans, and the
+   number has to be a number someone would print on a page — ₹8,499, not
+   ₹8,316.44 drifting with the exchange rate. These are what the card is
+   actually charged, GST INCLUDED: Indian buyers read a price as the price, and
+   a "+18%" at checkout is how a sale is lost at the last screen.
+
+   Set at roughly USD parity on 25 August 2026. Changing one is an edit here
+   and a matching Razorpay INR plan; `npm run verify:plans` checks both. */
+const PRICE_FIELD = {
+    [Currency.USD]: "priceUsd",
+    [Currency.INR]: "priceInr",
+};
+
 const UNLIMITED = null;
 
 const PLANS = {
@@ -40,6 +56,7 @@ const PLANS = {
         id: PlanId.FREE,
         name: "Free",
         priceUsd: 0,
+        priceInr: 0,
         // Docs-only Q&A, per spec.md §12. The upgrade trigger is the moment
         // they want "where is my order" to work, which needs TABLES + ACTIONS.
         features: [FeatureKey.KNOWLEDGE],
@@ -79,6 +96,7 @@ const PLANS = {
         id: PlanId.STARTER,
         name: "Starter",
         priceUsd: 29,
+        priceInr: 2499,
         features: [FeatureKey.KNOWLEDGE, FeatureKey.TABLES, FeatureKey.ACTIONS],
         limits: { conversations: 300, sources: 25, actions: 5, tables: 3, seats: 3, costUsd: 20 },
     },
@@ -87,6 +105,7 @@ const PLANS = {
         id: PlanId.GROWTH,
         name: "Growth",
         priceUsd: 99,
+        priceInr: 8499,
         features: [
             FeatureKey.KNOWLEDGE,
             FeatureKey.TABLES,
@@ -102,6 +121,7 @@ const PLANS = {
         id: PlanId.SCALE,
         name: "Scale",
         priceUsd: 399,
+        priceInr: 33999,
         features: Object.values(FeatureKey),
         limits: {
             conversations: 6000,
@@ -141,6 +161,13 @@ function planHasFeature(planId, featureKey) {
     return getPlan(planId).features.includes(featureKey);
 }
 
+/** The amount charged for a plan in a currency — the plan's own list price,
+    never a conversion of the other one. */
+function getPrice(planId, currency) {
+    const field = PRICE_FIELD[currency] || PRICE_FIELD[Currency.USD];
+    return getPlan(planId)[field];
+}
+
 module.exports = {
     PLANS,
     UNLIMITED,
@@ -148,6 +175,8 @@ module.exports = {
     TRIAL_DAYS,
     GRACE_PERIOD_DAYS,
     getPlan,
+    getPrice,
+    PRICE_FIELD,
     isWithinLimit,
     planHasFeature,
 };

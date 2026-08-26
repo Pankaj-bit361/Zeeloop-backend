@@ -61,12 +61,20 @@ async function main() {
 
     let failed = 0;
 
-    for (const planId of PAID) {
+    for (const currency of ["USD", "INR"]) {
+      const priceField = currency === "USD" ? "priceUsd" : "priceInr";
+      for (const planId of PAID) {
         const expected = PLANS[planId];
-        const variantId = config.BILLING_VARIANT_IDS[planId];
-        const label = `${expected.name.padEnd(8)} (${planId})`;
+        const variantId = (config.BILLING_VARIANT_IDS[currency] || {})[planId];
+        const label = `${expected.name.padEnd(8)} ${currency} (${planId})`;
 
         if (!variantId) {
+            // INR plans are created after the USD ones; missing is a warning
+            // there and a failure for USD, which every deployment must have.
+            if (currency === "INR") {
+                console.warn(`! ${label}  no BILLING_VARIANT_${planId}_INR configured — Indian workspaces get 503 at checkout`);
+                continue;
+            }
             console.error(`✗ ${label}  no BILLING_VARIANT_${planId} configured`);
             failed++;
             continue;
@@ -80,17 +88,15 @@ async function main() {
         }
 
         const problems = [];
-        if (actual.amount !== expected.priceUsd) {
-            problems.push(`charges ${actual.currency} ${actual.amount}, plans.js says USD ${expected.priceUsd}`);
+        if (actual.amount !== expected[priceField]) {
+            problems.push(`charges ${actual.currency} ${actual.amount}, plans.js says ${currency} ${expected[priceField]}`);
         }
-        if (actual.currency !== "USD") {
-            problems.push(`currency is ${actual.currency}, not USD`);
+        if (actual.currency !== currency) {
+            problems.push(`currency is ${actual.currency}, not ${currency}`);
         }
         if (actual.period !== "monthly" || actual.interval !== 1) {
             problems.push(`bills ${actual.period} every ${actual.interval}, expected monthly every 1`);
         }
-        // Not fatal — the name is for humans — but a Growth id sitting in the
-        // Starter slot usually shows up here first.
         if (actual.name && !actual.name.toLowerCase().includes(expected.name.toLowerCase())) {
             problems.push(`provider calls it "${actual.name}"`);
         }
@@ -100,8 +106,9 @@ async function main() {
             for (const problem of problems) console.error(`      ${problem}`);
             failed++;
         } else {
-            console.log(`✓ ${label}  ${variantId}  USD ${actual.amount} monthly`);
+            console.log(`✓ ${label}  ${variantId}  ${currency} ${actual.amount} monthly`);
         }
+      }
     }
 
     console.log("");

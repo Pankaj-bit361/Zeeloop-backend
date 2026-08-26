@@ -255,18 +255,54 @@ describe("configuration", () => {
         assert.equal(razorpay.isConfigured(), false);
     });
 
-    test("every paid plan has a provider plan id, and no two share one", () => {
+    test("every paid plan has a USD provider plan id, and no two share one", () => {
         /* The ids are three near-identical opaque strings pasted from a console.
            Duplicate one and the customer who clicked Growth is charged Starter's
            $29 — the subscription activates, the webhook applies whatever the
            notes said, and every screen agrees with itself. `npm run verify:plans`
            catches it against the live API; this catches it without a network. */
         const ids = [PlanId.STARTER, PlanId.GROWTH, PlanId.SCALE].map((id) => {
-            const variantId = config.BILLING_VARIANT_IDS[id];
-            assert.ok(variantId, `${id} has no provider plan id configured`);
+            const variantId = config.BILLING_VARIANT_IDS.USD[id];
+            assert.ok(variantId, `${id} has no USD provider plan id configured`);
             return variantId;
         });
         assert.equal(new Set(ids).size, ids.length, `duplicate plan id among ${ids.join(", ")}`);
+    });
+
+    test("INR plan ids, where configured, are distinct from every USD one", () => {
+        /* A Razorpay plan is created in one currency. Pasting a USD id into an
+           INR slot would send an Indian workspace to the exact plan Razorpay
+           says their card cannot pay — the failure this whole split exists to
+           prevent, reintroduced by a copy-paste. */
+        const usd = new Set(Object.values(config.BILLING_VARIANT_IDS.USD));
+        for (const [planId, variantId] of Object.entries(config.BILLING_VARIANT_IDS.INR)) {
+            if (!variantId) continue;
+            assert.ok(!usd.has(variantId), `${planId} INR id ${variantId} is also a USD id`);
+        }
+        const inr = Object.values(config.BILLING_VARIANT_IDS.INR).filter(Boolean);
+        assert.equal(new Set(inr).size, inr.length, "duplicate INR plan id");
+    });
+
+    test("checkout passes the currency through to the provider notes", () => {
+        /* The webhook stamps subscription.currency from these notes. Drop the
+           field and every subscription is currency-less, and the lock that
+           stops someone flipping price lists under a live charge never engages. */
+        let sent = null;
+        const originalFetch = global.fetch;
+        global.fetch = async (url, init) => {
+            sent = JSON.parse(init.body);
+            return { ok: true, json: async () => ({ id: "sub_x", short_url: "https://rzp.io/x" }) };
+        };
+        return razorpay
+            .createCheckout({ orgId: "org_1", planId: PlanId.GROWTH, variantId: "plan_inr", currency: "INR" })
+            .then((result) => {
+                assert.equal(result.success, true);
+                assert.equal(sent.notes.currency, "INR");
+                assert.equal(sent.plan_id, "plan_inr");
+            })
+            .finally(() => {
+                global.fetch = originalFetch;
+            });
     });
 
     test("the registry resolves RAZORPAY to this adapter", () => {

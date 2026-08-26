@@ -6,6 +6,7 @@ const {
     HeaderTextMode,
     BackgroundType,
     PlanId,
+    Currency,
 } = require("../../config/enums");
 const { getPlan } = require("../../config/plans");
 
@@ -153,6 +154,15 @@ const orgSchema = new mongoose.Schema(
             // suppress the announcement of the very first section a workspace
             // ever earns — the one that matters most.
             firstLoadAt: { type: Date, default: null },
+        },
+        /* Which price list this workspace sees and pays. `country` is the
+           ISO-3166 code the request arrived from at signup (or null when no
+           edge told us); `currency` is derived from it and is the thing that
+           matters — it picks the provider plan at checkout, and once a
+           subscription exists it cannot change. */
+        billing: {
+            country: { type: String, default: null },
+            currency: { type: String, enum: [...Object.values(Currency), null], default: null },
         },
         credits: {
             plan: { type: String, default: PlanId.FREE },
