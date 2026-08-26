@@ -95,17 +95,38 @@ describe("GET /billing — currency follows the workspace, not the request", () 
         assert.equal(billing.json.data.prices.FREE, 0);
     });
 
-    test("a workspace with no country is USD, and the first request that knows settles it", async () => {
+    test("created with country unknown → USD; the FIRST request that knows the country re-decides, once", async () => {
+        /* Production is behind plain nginx: nothing stamps a country on the
+           signup request, so every workspace used to be born USD and stay
+           there — including Indian ones whose cards cannot pay USD. The
+           dashboard now sends the browser's country; the first time the
+           server learns it, a detected default may change. Only once: a
+           later request from somewhere else does not flip it again. */
         const orgB = await createIsolatedOrg("nocountry");
-        const first = await get(`/api/org/${orgB.orgId}/billing`, {
-            headers: { ...authHeader(orgB.token), "x-zealoop-country": "IN" },
-        });
-        // Created without a country → USD was decided at birth and sticks.
-        // The India header on a later read must NOT flip it: a price list
-        // that changes with the wifi is one nobody trusts.
-        assert.equal(first.json.data.currency, "USD");
-        assert.equal(first.json.data.taxIncluded, false);
-        assert.equal(first.json.data.prices.GROWTH, 99);
+        const auth = authHeader(orgB.token);
+
+        const unknown = await get(`/api/org/${orgB.orgId}/billing`, { headers: auth });
+        assert.equal(unknown.json.data.currency, "USD");
+        assert.equal(unknown.json.data.country, null);
+
+        const learned = await get(`/api/org/${orgB.orgId}/billing`, { headers: { ...auth, "x-zealoop-country": "IN" } });
+        assert.equal(learned.json.data.currency, "INR", "first known country re-decides the default");
+        assert.equal(learned.json.data.country, "IN");
+        assert.equal(learned.json.data.prices.GROWTH, PLANS.GROWTH.priceInr);
+
+        const elsewhere = await get(`/api/org/${orgB.orgId}/billing`, { headers: { ...auth, "x-zealoop-country": "US" } });
+        assert.equal(elsewhere.json.data.currency, "INR", "a later, different country must not flip it again");
+        assert.equal(elsewhere.json.data.country, "IN");
+    });
+
+    test("a currency a person chose is never overridden by a detected country", async () => {
+        const orgB = await createIsolatedOrg("chosen");
+        const auth = authHeader(orgB.token);
+        // Born unknown → USD. They pick INR by hand.
+        await patch(`/api/org/${orgB.orgId}/billing/currency`, { headers: auth, body: { currency: "INR" } });
+        // Then open the dashboard from London.
+        const later = await get(`/api/org/${orgB.orgId}/billing`, { headers: { ...auth, "x-zealoop-country": "GB" } });
+        assert.equal(later.json.data.currency, "INR", "the choice stands");
     });
 
     test("the seed workspace reports a full price list in its currency", async () => {

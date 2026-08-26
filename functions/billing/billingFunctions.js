@@ -197,7 +197,7 @@ class BillingFunctions {
             }
             const updated = await Org.findOneAndUpdate(
                 { orgId },
-                { "billing.currency": currency },
+                { "billing.currency": currency, "billing.currencyChosen": true },
                 { new: true }
             );
             if (!updated) {
@@ -420,14 +420,24 @@ class BillingFunctions {
         if (!workspace) return { success: false };
 
         const locked = this._currencyLocked({ subscription });
-        let currency = (locked && subscription.currency) || (workspace.billing && workspace.billing.currency) || null;
+        const billing = workspace.billing || {};
+        let currency = (locked && subscription.currency) || billing.currency || null;
         const patch = {};
 
-        if (!currency) {
+        /* Production sits behind plain nginx — no CDN stamps a country — so
+           a workspace can be created with country unknown, default to USD,
+           and only learn where it is on a later request (the dashboard now
+           sends the browser's timezone-derived country). That first known
+           country gets to re-decide a DEFAULT, once. It never overrides a
+           currency a person chose, and never moves a live subscription. */
+        const countryNewlyKnown = Boolean(country) && !billing.country;
+        const mayRedecide = !locked && !billing.currencyChosen;
+
+        if (!currency || (countryNewlyKnown && mayRedecide)) {
             currency = geoFunctions.currencyForCountry(country);
             patch["billing.currency"] = currency;
         }
-        if (country && !(workspace.billing && workspace.billing.country)) {
+        if (countryNewlyKnown) {
             patch["billing.country"] = country;
         }
         if (Object.keys(patch).length) {

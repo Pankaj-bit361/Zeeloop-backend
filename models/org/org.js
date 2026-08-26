@@ -163,6 +163,10 @@ const orgSchema = new mongoose.Schema(
         billing: {
             country: { type: String, default: null },
             currency: { type: String, enum: [...Object.values(Currency), null], default: null },
+            // True once a person picked it on the billing page. A detected
+            // default may be re-decided when the country becomes known; a
+            // choice never is.
+            currencyChosen: { type: Boolean, default: false },
         },
         credits: {
             plan: { type: String, default: PlanId.FREE },
