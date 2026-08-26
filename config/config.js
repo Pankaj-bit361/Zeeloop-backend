@@ -226,14 +226,13 @@ module.exports = {
             SCALE: process.env.BILLING_VARIANT_SCALE || "plan_TQARvK1Ly2fm3z",
         },
         /* INR plans are separate Razorpay plans — a plan is created in one
-           currency and stays there. No defaults yet: until these are created
-           on the Razorpay dashboard and committed here, an Indian workspace
-           clicking Upgrade gets a 503 that says so, rather than a USD plan its
-           card cannot pay. */
+           currency and stays there. Created 27 August 2026; ids read back
+           from the Razorpay API rather than typed, so an l/I slip cannot
+           send an Indian workspace to a plan that 404s. */
         INR: {
-            STARTER: process.env.BILLING_VARIANT_STARTER_INR || null,
-            GROWTH: process.env.BILLING_VARIANT_GROWTH_INR || null,
-            SCALE: process.env.BILLING_VARIANT_SCALE_INR || null,
+            STARTER: process.env.BILLING_VARIANT_STARTER_INR || "plan_TUV1MRONI5FB1M",
+            GROWTH: process.env.BILLING_VARIANT_GROWTH_INR || "plan_TUV1ihxmeF1gBE",
+            SCALE: process.env.BILLING_VARIANT_SCALE_INR || "plan_TUV2XwkSYdThlJ",
         },
     },
 
