@@ -164,6 +164,18 @@ module.exports = {
     CHUNK_TARGET_TOKENS: 600,
     CHUNK_OVERLAP_RATIO: 0.15,
 
+    /* Context assembly after rerank (small-to-big). Each reranked chunk is
+       widened to the chunks within NEIGHBOR_EXPAND_RADIUS positions of it in
+       the same document, until CONTEXT_MAX_TOKENS is spent. 4500 is three
+       fully widened top chunks at 600 tokens each with overlap trimmed; the
+       remaining two of the top five arrive bare. */
+    NEIGHBOR_EXPAND_RADIUS: Number(process.env.NEIGHBOR_EXPAND_RADIUS || 1),
+    CONTEXT_MAX_TOKENS: Number(process.env.CONTEXT_MAX_TOKENS || 4500),
+
+    // Follow-up suggestions under an answer. Rendered as buttons, so bounded.
+    FOLLOW_UPS_MAX: 3,
+    FOLLOW_UP_MAX_CHARS: 80,
+
     // Generation
     MAX_TOOL_ITERATIONS: 4,
     MAX_OUTPUT_TOKENS: 1024,

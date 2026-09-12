@@ -327,6 +327,10 @@ class ChatFunctions {
                 identityVerified,
                 rawMessage: content,
                 history,
+                // Stage progress for the typing bubble. Goes to whoever holds a
+                // socket on this conversation; a visitor on polling, or on their
+                // first message (no id to subscribe to yet), sees the dots.
+                onProgress: (progress) => realtimeHub.publish(org.orgId, conversationId, { type: "progress", ...progress }),
             });
 
             const assistantMessage = await Message.create({
