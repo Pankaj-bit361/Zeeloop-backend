@@ -47,6 +47,20 @@ Locally, `../widget/dist` is preferred when present so a fresh build shows
 immediately; the suite fails if it differs from `public/widget`, so the copy
 cannot be forgotten. `WIDGET_DIST=/path` overrides both.
 
+**Caching and compression.** `server.js` serves widget assets itself rather
+than through `express.static`, because production's nginx sends them
+uncompressed. It picks the build's `.br` or `.gz` sibling from
+`Accept-Encoding` and sets:
+
+| File | Cache-Control |
+|---|---|
+| `frame/frame.<hash>.js`, `frame/frame.<hash>.css` | `public, max-age=31536000, immutable` |
+| `widget.js`, `frame/index.html` | `public, max-age=300, stale-while-revalidate=86400` |
+| a fingerprint this deploy no longer has | current build, `no-cache` |
+
+`tests/widgetAssets.test.js` covers encoding choice, cache headers, the stale
+fingerprint fallback, path traversal and the trailing-slash redirect.
+
 ## Atlas search indexes (required for retrieval)
 
 Without both indexes `_hybridSearch` returns empty and the agent abstains.
@@ -77,6 +91,43 @@ Create them on the `chunks` collection:
     }
 }
 ```
+
+## Context assembly and the repair pass
+
+Two things happen between rerank and the answer that the six-stage table in
+`spec.md` §5 did not originally have.
+
+**Neighbour expansion (stage 3b).** Reranking picks the 600-token chunk that
+best matches the question; the answer is routinely in the chunk next to it.
+`_expandNeighbors` fetches the chunks within `NEIGHBOR_EXPAND_RADIUS` positions
+in the same document, merges contiguous windows, trims the 15% overlap so the
+model does not read the same sentence twice, and stops widening once
+`CONTEXT_MAX_TOKENS` is spent (later chunks arrive bare). A passage cites the
+best-scoring chunk inside it, so `citationChunkIds` still resolve, and
+`memberChunkIds` records what was actually read. The validator reads the same
+widened context. The trace carries `contextChunkCount`.
+
+**Repair pass (stage 5b).** When the validator says an answer addresses the
+question but names unsupported claims, the turn gets one more generate call
+with those claims listed and an instruction to rewrite from the context alone.
+The rewrite is re-validated on the same terms; a second failure abstains as
+before. `repairAttempted` / `repairSucceeded` on the trace give the pass its
+own hit rate. It never runs for clarifications, tool proposals, or a validator
+that produced no claims — "does not answer the question" has no edit that
+fixes it.
+
+**Follow-ups.** The answer schema carries `followUps`: up to three short
+questions the model expects next and the shown knowledge can answer. They are
+sanitised in `_cleanFollowUps` and reach the widget as a `choices` component
+under an `ANSWERED` turn only.
+
+**Progress.** `runTurn` accepts `onProgress`; the chat path publishes each
+stage to the conversation's socket as `{ type: "progress", stage, sources? }`.
+A listener that throws is ignored.
+
+`tests/chatQuality.test.js` covers all of this in-process with the model calls
+and the chunk lookup stubbed — it is the one suite here that needs neither the
+server nor a database.
 
 ## API surface
 

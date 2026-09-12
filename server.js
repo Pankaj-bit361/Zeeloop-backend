@@ -260,9 +260,76 @@ const demoPage = (req, res, next) => {
     res.setHeader("Cross-Origin-Resource-Policy", "cross-origin");
     next();
 };
-app.get("/widget.js", widgetCors, embeddable, requireWidgetBuild, (req, res) => {
-    res.sendFile(path.join(widgetDist, "widget.js"), { maxAge: "5m" });
-});
+/* Widget assets: compressed, and cached for how each file is actually used.
+
+   Measured before this (Sep 2026): production sent frame.js and frame.css
+   uncompressed (38 KB and 41 KB, against 13 KB and 9 KB gzipped) with a
+   five-minute cache, so every returning visitor paid a full round trip per
+   file after five minutes.
+
+   - frame.<hash>.js/.css are immutable. The build fingerprints them, so a new
+     deploy is a new URL and a year-long cache is safe.
+   - index.html and widget.js keep a short cache (their URLs never change —
+     widget.js is in every customer's snippet) with stale-while-revalidate, so
+     a return visit paints from cache and refreshes in the background.
+   - The build writes .br and .gz siblings; the browser's Accept-Encoding picks
+     one. nginx passes a Content-Encoding it did not add straight through.
+   - A page holding an older index.html can ask for a fingerprint this deploy
+     no longer has. It gets the current build under no-cache, not a 404 that
+     leaves the messenger blank. */
+const WIDGET_TYPES = {
+    ".js": "application/javascript; charset=utf-8",
+    ".css": "text/css; charset=utf-8",
+    ".html": "text/html; charset=utf-8",
+};
+const HASHED_FRAME_ASSET = /^\/frame\.[0-9a-f]{10}\.(js|css)$/;
+function widgetCacheControl(rel) {
+    if (HASHED_FRAME_ASSET.test(rel)) return "public, max-age=31536000, immutable";
+    return "public, max-age=300, stale-while-revalidate=86400";
+}
+function sendWidgetAsset(req, res, next, root, rel) {
+    const fs = require("fs");
+    const resolvedRoot = path.resolve(root);
+    let file = path.resolve(resolvedRoot, `.${rel}`);
+    if (!file.startsWith(resolvedRoot + path.sep)) return next();
+    let cacheControl = widgetCacheControl(rel);
+    if (!fs.existsSync(file) && HASHED_FRAME_ASSET.test(rel)) {
+        file = path.join(resolvedRoot, `frame.${rel.match(HASHED_FRAME_ASSET)[1]}`);
+        cacheControl = "no-cache";
+    }
+    let stat;
+    try {
+        stat = fs.statSync(file);
+    } catch (error) {
+        return next();
+    }
+    const type = WIDGET_TYPES[path.extname(file)];
+    if (!stat.isFile() || !type) return next();
+
+    const accept = String(req.headers["accept-encoding"] || "");
+    let chosen = file;
+    let encoding = null;
+    if (/\bbr\b/.test(accept) && fs.existsSync(`${file}.br`)) {
+        chosen = `${file}.br`;
+        encoding = "br";
+    } else if (/\bgzip\b/.test(accept) && fs.existsSync(`${file}.gz`)) {
+        chosen = `${file}.gz`;
+        encoding = "gzip";
+    }
+    // Set before sendFile: it keeps a Content-Type that is already present,
+    // which matters because the file on disk may be frame.js.br.
+    res.setHeader("Content-Type", type);
+    res.setHeader("Cache-Control", cacheControl);
+    res.setHeader("Vary", "Accept-Encoding");
+    if (encoding) res.setHeader("Content-Encoding", encoding);
+    return res.sendFile(chosen, { cacheControl: false, dotfiles: "deny" }, (error) => {
+        if (error && !res.headersSent) next(error);
+    });
+}
+
+app.get("/widget.js", widgetCors, embeddable, requireWidgetBuild, (req, res, next) =>
+    sendWidgetAsset(req, res, next, widgetDist, "/widget.js")
+);
 app.get("/widget/demo", demoPage, (req, res) => {
     res.sendFile(path.join(widgetDist, "demo.html"));
 });
@@ -280,7 +347,28 @@ app.get("/widget/theme-lab", demoPage, (req, res) => {
 app.get("/widget/theme-lab.js", demoPage, (req, res) => {
     res.sendFile(path.join(widgetDist, "theme-lab.js"));
 });
-app.use("/widget/frame", embeddable, requireWidgetBuild, express.static(path.join(widgetDist, "frame"), { maxAge: "5m" }));
+app.use(
+    "/widget/frame",
+    embeddable,
+    requireWidgetBuild,
+    (req, res, next) => {
+        if (req.method !== "GET" && req.method !== "HEAD") return next();
+        let rel;
+        try {
+            rel = decodeURIComponent(req.path);
+        } catch (error) {
+            return next();
+        }
+        if (rel === "/") {
+            // /widget/frame without the slash must redirect first, or the
+            // page's relative ./frame.<hash>.js resolves one directory too high.
+            if (!req.originalUrl.split("?")[0].endsWith("/")) return next();
+            rel = "/index.html";
+        }
+        return sendWidgetAsset(req, res, next, path.join(widgetDist, "frame"), rel);
+    },
+    express.static(path.join(widgetDist, "frame"), { maxAge: "5m" })
+);
 app.use("/api/auth", dashboardCors, authRoutes);
 app.use("/api/knowledge", dashboardCors, knowledgeRoutes);
 app.use("/api/org", dashboardCors, actionRoutes);
