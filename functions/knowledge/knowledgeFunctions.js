@@ -695,7 +695,8 @@ class KnowledgeFunctions {
 
     async _fetchPage({ url, title, contentSelector }) {
         try {
-            const response = await fetch(url, {
+            const { outboundRequest } = require("../utilFunctions/outboundRequest");
+            const response = await outboundRequest(url, {
                 redirect: "follow",
                 headers: { "user-agent": "ZealoopBot/1.0 (+https://zealoop.com/docs/knowledge)" },
             });

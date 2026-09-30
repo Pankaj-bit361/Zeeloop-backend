@@ -1,5 +1,6 @@
 const config = require("../../config/config");
 const generalFunctions = require("../utilFunctions/generalFunctions");
+const { outboundRequest } = require("../utilFunctions/outboundRequest");
 
 // §1.7 — domain → brand colours and logo.
 //
@@ -112,10 +113,10 @@ class BrandfetchFunctions {
     // handful of anchored patterns.
     async _fetchFromPage({ domain, fetchImpl }) {
         try {
-            const response = await fetchImpl(`https://${domain}`, {
+            const response = await outboundRequest(`https://${domain}`, {
+                fetchImpl, timeoutMs: FETCH_TIMEOUT_MS, maxBytes: 1024 * 1024,
                 redirect: "follow",
                 headers: { "user-agent": "ZealoopBot/1.0 (+https://zealoop.com/docs/knowledge)" },
-                signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
             });
             if (!response.ok) return { success: false };
 

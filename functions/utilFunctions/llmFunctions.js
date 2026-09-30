@@ -109,6 +109,7 @@ class LlmFunctions {
                 : message
         );
         const response = await fetch(`${config.OPENROUTER_BASE_URL}/chat/completions`, {
+            signal: AbortSignal.timeout(25_000),
             method: "POST",
             headers: {
                 Authorization: `Bearer ${config.OPENROUTER_API_KEY}`,
@@ -219,6 +220,7 @@ class LlmFunctions {
                 `${config.GEMINI_BASE_URL}/models/${model}:batchEmbedContents?key=${config.GEMINI_API_KEY}`,
                 {
                     method: "POST",
+                    signal: AbortSignal.timeout(20_000),
                     headers: { "content-type": "application/json" },
                     body: JSON.stringify({
                         requests: batch.map((text) => ({
@@ -264,6 +266,7 @@ class LlmFunctions {
 
     async _embedOpenRouter({ texts, fetchImpl = fetch }) {
         const response = await fetchImpl(`${config.OPENROUTER_BASE_URL}/embeddings`, {
+            signal: AbortSignal.timeout(20_000),
             method: "POST",
             headers: {
                 Authorization: `Bearer ${config.OPENROUTER_API_KEY}`,
@@ -308,6 +311,7 @@ class LlmFunctions {
             throw new LlmError("voyage", "rerank skipped: VOYAGE_API_KEY not set", 503);
         }
         const response = await fetch("https://api.voyageai.com/v1/rerank", {
+            signal: AbortSignal.timeout(10_000),
             method: "POST",
             headers: {
                 Authorization: `Bearer ${config.VOYAGE_API_KEY}`,

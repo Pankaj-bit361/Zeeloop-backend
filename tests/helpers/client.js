@@ -1,9 +1,8 @@
 // Shared HTTP client + fixture helpers for the integration test suite.
 //
-// These tests hit a REAL running server (node --watch server.js on
-// BASE_URL, default http://localhost:4000) against a REAL MongoDB — no
-// mocking, matching how this app is actually built and demoed. Run
-// `npm run seed` first so the AcmeShip demo org exists with known data.
+// npm test supplies a disposable local database, seeded API on an ephemeral
+// port, and deterministic provider fixtures. The explicit against-running-api
+// command is a manual workflow; never point it at production data.
 "use strict";
 
 const BASE_URL = process.env.TEST_BASE_URL || "http://localhost:4000";
@@ -59,6 +58,9 @@ async function createIsolatedOrg(label = "isolated") {
     const signup = await post("/api/auth/signup", { body: { name: "Isolated Owner", email, password } });
     if (!signup.json.success) throw new Error(`signup failed: ${JSON.stringify(signup.json)}`);
     const cookie = signup.setCookie.split(";")[0];
+    if (!signup.json.data.verificationUrl) throw new Error("Integration tests require an explicit test verification link");
+    const verified = await post("/api/auth/verify-email", { cookie, body: { token: new URL(signup.json.data.verificationUrl).searchParams.get("token") } });
+    if (!verified.json.success) throw new Error(`Verification failed: ${JSON.stringify(verified.json)}`);
 
     const createOrg = await post("/api/auth/orgs", {
         body: { name: `${label} Co`, website: "https://example.com" },

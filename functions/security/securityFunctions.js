@@ -76,7 +76,7 @@ class SecurityFunctions {
                 origins = [...new Set(normalised)];
             }
 
-            if (enforce === true && origins.length === 0) {
+            if ((enforce === true || (enforce === undefined && org.widget.enforceOriginAllowlist)) && origins.length === 0) {
                 return {
                     status: 400,
                     json: {
@@ -233,7 +233,7 @@ class SecurityFunctions {
         if (!widget.enforceOriginAllowlist) return { allowed: true, enforced: false };
 
         const allowlist = widget.allowedOrigins || [];
-        if (allowlist.length === 0) return { allowed: true, enforced: false };
+        if (allowlist.length === 0) return { allowed: false, enforced: true, reason: "No embedding origins are configured" };
 
         // No Origin header at all means a server-to-server call or a same-origin
         // navigation, not a browser embedding from another site. Refusing those
@@ -241,6 +241,11 @@ class SecurityFunctions {
         if (!origin) return { allowed: true, enforced: true, reason: "No Origin header" };
 
         const normalised = this.normaliseOrigin(origin);
+        // The messenger runs on the API origin. Its actual embedding sites
+        // are restricted by the frame document's frame-ancestors policy.
+        if (normalised && normalised === this.normaliseOrigin(config.API_URL)) {
+            return { allowed: true, enforced: true, reason: "Messenger API origin" };
+        }
         const allowed = allowlist.some((entry) => this._originMatches(normalised, entry));
         return {
             allowed,
@@ -258,9 +263,11 @@ class SecurityFunctions {
             if (!raw) return null;
             // A wildcard subdomain is stored as written and expanded at match
             // time; URL() cannot parse it.
-            if (raw.startsWith("https://*.") || raw.startsWith("http://*.")) return raw.toLowerCase();
-            const url = new URL(raw.includes("://") ? raw : `https://${raw}`);
-            return `${url.protocol}//${url.host}`.toLowerCase();
+            const wildcard = /^https?:\/\/\*\./i.test(raw);
+            const url = new URL(wildcard ? raw.replace("*.", "wildcard.") : raw.includes("://") ? raw : `https://${raw}`);
+            if (!["http:", "https:"].includes(url.protocol) || url.username || url.password) return null;
+            if (!/^[a-z0-9._-]+$/i.test(url.hostname) && !/^\[[a-f0-9:]+\]$/i.test(url.hostname)) return null;
+            return wildcard ? `${url.protocol}//*.${url.host.slice("wildcard.".length)}`.toLowerCase() : url.origin.toLowerCase();
         } catch (error) {
             return null;
         }

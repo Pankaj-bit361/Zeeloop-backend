@@ -125,7 +125,7 @@ describe("embed — transport fallback", () => {
         const vectors = await llmFunctions.embed({ texts: ["a", "b"], fetchImpl: impl });
         assert.equal(vectors.length, 2);
         assert.ok(seen.some((url) => url.includes("googleapis.com")), "Google should be tried first");
-        assert.ok(seen.some((url) => url.includes("openrouter.ai")), "then OpenRouter");
+        assert.ok(seen.some((url) => url.startsWith(config.OPENROUTER_BASE_URL)), "then the configured OpenRouter transport");
     });
 
     test("goes straight to OpenRouter when no Google key is set", async () => {
@@ -142,7 +142,7 @@ describe("embed — transport fallback", () => {
         };
         await llmFunctions.embed({ texts: ["a"], fetchImpl: impl });
         assert.equal(seen.length, 1);
-        assert.ok(seen[0].includes("openrouter.ai"));
+        assert.ok(seen[0].startsWith(config.OPENROUTER_BASE_URL));
     });
 
     test("throws when both transports fail — no silent empty result", async () => {

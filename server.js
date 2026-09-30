@@ -64,6 +64,8 @@ const logger = require("./functions/utilFunctions/logger");
 logger.install({ format: config.LOG_FORMAT, level: config.LOG_LEVEL });
 
 const app = express();
+app.set("trust proxy", config.TRUST_PROXY);
+let indexesReady = false;
 
 // First in the chain: everything downstream, including the error handler, needs
 // the request id to already exist.
@@ -109,6 +111,19 @@ const dashboardCors = cors({ origin: config.CORS_DASHBOARD_ORIGINS, credentials:
 // service and leave nothing serving at all.
 app.get("/", (req, res) => res.status(200).json({ success: true, status: "ok" }));
 app.get("/health", (req, res) => res.status(200).json({ success: true, status: "ok" }));
+app.get("/ready", (req, res) => {
+    const ready = indexesReady && mongoose.connection.readyState === 1;
+    res.status(ready ? 200 : 503).json({ success: ready, status: ready ? "ready" : "starting" });
+});
+// Readiness also gates writes when a load balancer still routes to a booting
+// instance. The uniqueness constraints must exist before accepting traffic.
+app.use((req, res, next) => {
+    if (/^\/(api|v1|webhooks|inbound|auth)(\/|$)/.test(req.path) && (!indexesReady || mongoose.connection.readyState !== 1)) {
+        res.setHeader("Retry-After", "5");
+        return res.status(503).json({ success: false, error: "Service is starting. Please retry shortly." });
+    }
+    next();
+});
 
 // Deep health is a different question from liveness: "can this deployment
 // actually do its job". For humans and uptime monitors, never for the load
@@ -167,8 +182,7 @@ app.use("/inbound", widgetCors, inboundEmailRoutes);
 
 // Rate limiting and the origin allowlist sit on the widget mount rather than
 // inside the router, so a route added later is covered by default instead of by
-// remembering. Order matters: rate limiting first, because it is in-memory and
-// free, and the allowlist check costs a database read.
+// remembering. Shared rate limiting runs before the workspace policy lookup.
 app.use("/api/widget", widgetCors, widgetRateLimit, enforceOriginAllowlist, widgetRoutes);
 
 // ── Widget static assets ─────────────────────────────────────
@@ -211,8 +225,8 @@ const requireWidgetBuild = (req, res, next) => {
     if (widgetReady) return next();
     return res.status(503).json({ success: false, error: "The widget build is not deployed on this server" });
 };
-// §8.4 — the frame's own CSP. `frame-ancestors *` is required (the whole point
-// is embedding on customer sites) but everything else is locked down, because
+// The frame's CSP permits customer embedding unless the workspace enables an
+// allowlist. Everything else is locked down, because
 // the frame renders content that originates with the customer's own knowledge
 // base and end users' messages.
 //
@@ -248,6 +262,30 @@ const embeddable = (req, res, next) => {
     res.setHeader("Content-Security-Policy", FRAME_CSP);
     res.setHeader("Cross-Origin-Resource-Policy", "cross-origin");
     next();
+};
+
+// Origin on an iframe's API requests identifies this API, not its parent site.
+// Only the browser's frame-ancestors check verifies every actual ancestor.
+const widgetFramePolicy = async (req, res, next) => {
+    if (!["/", "/index.html"].includes(req.path) || typeof req.query.pk !== "string") return next();
+    try {
+        const org = await require("./models/org/org").findOne({ publicKey: req.query.pk }).select("widget").lean();
+        if (org) {
+            res.locals.widgetFramePolicy = true;
+            if (org.widget?.enforceOriginAllowlist) {
+                const security = require("./functions/security/securityFunctions");
+                const origins = (org.widget.allowedOrigins || []).map(value => security.normaliseOrigin(value)).filter(Boolean);
+                if (req.query.preview === "1") {
+                    origins.push(...config.CORS_DASHBOARD_ORIGINS.map(value => security.normaliseOrigin(value)).filter(Boolean));
+                }
+                res.setHeader("Content-Security-Policy", FRAME_CSP.replace("frame-ancestors *", `frame-ancestors ${origins.length ? origins.join(" ") : "'none'"}`));
+            }
+        }
+        next();
+    } catch (error) {
+        generalFunctions.captureException(error);
+        res.status(503).json({ success: false, error: "Widget policy is temporarily unavailable" });
+    }
 };
 
 // The demo, compare and theme-lab pages are stand-ins for a CUSTOMER'S site,
@@ -293,6 +331,7 @@ function sendWidgetAsset(req, res, next, root, rel) {
     let file = path.resolve(resolvedRoot, `.${rel}`);
     if (!file.startsWith(resolvedRoot + path.sep)) return next();
     let cacheControl = widgetCacheControl(rel);
+    if (res.locals.widgetFramePolicy && rel === "/index.html") cacheControl = "private, no-store";
     if (!fs.existsSync(file) && HASHED_FRAME_ASSET.test(rel)) {
         file = path.join(resolvedRoot, `frame.${rel.match(HASHED_FRAME_ASSET)[1]}`);
         cacheControl = "no-cache";
@@ -351,6 +390,7 @@ app.use(
     "/widget/frame",
     embeddable,
     requireWidgetBuild,
+    widgetFramePolicy,
     (req, res, next) => {
         if (req.method !== "GET" && req.method !== "HEAD") return next();
         let rel;
@@ -417,7 +457,9 @@ async function connectWithRetry() {
         // on a fresh database there is a window at boot where the constraint
         // does not yet exist and a duplicate insert succeeds. Awaited here so
         // that window closes before traffic arrives.
-        await indexReadiness.ensureCriticalIndexes();
+        const readiness = await indexReadiness.ensureCriticalIndexes();
+        if (!readiness.success) throw new Error("Critical uniqueness constraints are not ready");
+        indexesReady = true;
         // Loud, not fatal. Without the Atlas search indexes retrieval returns
         // nothing and the agent abstains from every question — indistinguishable
         // from an empty knowledge base unless someone says so at boot (§8.3).
@@ -441,38 +483,38 @@ httpServer.listen(config.PORT, () => {
 
 connectWithRetry();
 
+// Run cron on one designated scheduler instance. API replicas can opt out;
+// awaiting each job also lets node-cron prevent overlap within that instance.
+function scheduleJob(name, expression, task) {
+    if (!config.SCHEDULED_JOBS_ENABLED) return;
+    cron.schedule(expression, async () => {
+        if (!indexesReady || mongoose.connection.readyState !== 1) return;
+        try { await task(); }
+        catch (error) { console.error(`Scheduled job ${name} failed`, error.message); generalFunctions.captureException(error); }
+    }, { name, noOverlap: true, timezone: "UTC" });
+}
 // Autonomous resolution is computed by cron, never at write time (§11).
-cron.schedule(config.RESOLUTION_CRON, () => {
-    analyticsFunctions.computeResolutions();
-});
+scheduleJob("resolutions", config.RESOLUTION_CRON, () => analyticsFunctions.computeResolutions());
 
 // Retention purge (§8.1). Disabled unless RETENTION_DAYS is set — a workspace
 // that has not chosen a window keeps its data, and an unset variable must never
 // read as "delete everything".
 if (config.RETENTION_DAYS > 0) {
-    cron.schedule(config.RETENTION_CRON, () => {
-        complianceFunctions.purgeExpired();
-    });
+    scheduleJob("retention", config.RETENTION_CRON, () => complianceFunctions.purgeExpired());
     console.log(`Server: retention purge scheduled (${config.RETENTION_DAYS} days, ${config.RETENTION_CRON})`);
 }
 
 // Attribution counters (§2.5). Computed from TurnTrace rather than incremented
 // at write time — see attributionFunctions for why.
-cron.schedule(config.ATTRIBUTION_CRON, () => {
-    attributionFunctions.computeAttribution({});
-});
+scheduleJob("attribution", config.ATTRIBUTION_CRON, () => attributionFunctions.computeAttribution({}));
 
 // Answer quality grading (§3.4). Runs on 100% of conversations, unlike thumbs
 // feedback which arrives on under 5%.
-cron.schedule(config.QUALITY_CRON, () => {
-    qualityFunctions.gradePending({});
-});
+scheduleJob("quality", config.QUALITY_CRON, () => qualityFunctions.gradePending({}));
 
 // Trial notices, dunning and suspension (§0.5). Idempotent end to end, which is
 // what makes it safe on a schedule that will occasionally fire twice.
-cron.schedule(config.LIFECYCLE_CRON, () => {
-    subscriptionFunctions.runLifecycleSweep({});
-});
+scheduleJob("lifecycle", config.LIFECYCLE_CRON, () => subscriptionFunctions.runLifecycleSweep({}));
 
 // §1.3 — the crawl worker. Crawling used to run inline on the request thread,
 // which blocked it and could not survive a deploy. This is an in-process poller
@@ -485,7 +527,5 @@ if (config.CRAWL_WORKER_ENABLED) {
 
     // §1.4 — scheduled re-syncs. Queued, never crawled inline, so a hundred due
     // sources do not all run at once on one tick.
-    cron.schedule("*/15 * * * *", () => {
-        knowledgeFunctions.enqueueScheduledSyncs();
-    });
+    scheduleJob("source-syncs", "*/15 * * * *", () => knowledgeFunctions.enqueueScheduledSyncs());
 }

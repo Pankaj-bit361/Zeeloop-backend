@@ -20,7 +20,7 @@ router.get("/:orgId/settings", reqOrgOwnerAuth, async (req, res) => {
     }
 });
 
-router.patch("/:orgId/settings", reqOrgOwnerAuth, async (req, res) => {
+router.patch("/:orgId/settings", reqOrgOwnerAuth, requireRole(...OWNER_OR_ADMIN), async (req, res) => {
     try {
         const { status, json } = await orgFunctions.updateSettings({
             orgId: req.params.orgId,
@@ -46,7 +46,7 @@ router.patch("/:orgId/settings", reqOrgOwnerAuth, async (req, res) => {
     }
 });
 
-router.post("/:orgId/widget-secret/reveal", reqOrgOwnerAuth, async (req, res) => {
+router.post("/:orgId/widget-secret/reveal", reqOrgOwnerAuth, requireRole(...OWNER_OR_ADMIN), async (req, res) => {
     try {
         const { status, json } = await orgFunctions.revealSecret({ orgId: req.params.orgId });
         return res.status(status).json(json);
@@ -58,9 +58,9 @@ router.post("/:orgId/widget-secret/reveal", reqOrgOwnerAuth, async (req, res) =>
     }
 });
 
-router.post("/:orgId/widget-secret/rotate", reqOrgOwnerAuth, async (req, res) => {
+router.post("/:orgId/widget-secret/rotate", reqOrgOwnerAuth, requireRole(...OWNER_OR_ADMIN), async (req, res) => {
     try {
-        const { status, json } = await orgFunctions.rotateSecret({ orgId: req.params.orgId });
+        const { status, json } = await require("../functions/security/securityFunctions").rotateWidgetSecret({ orgId: req.params.orgId, actorEmail: req.auth.email });
         return res.status(status).json(json);
     } catch (error) {
         console.error(`Org router ${req.path} catch block`);

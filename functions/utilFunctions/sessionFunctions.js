@@ -1,4 +1,6 @@
 const crypto = require("crypto");
+const { promisify } = require("util");
+const scrypt = promisify(crypto.scrypt);
 const config = require("../../config/config");
 
 // Dashboard sign-in mechanics: password hashing and the signed session cookie.
@@ -8,13 +10,24 @@ const config = require("../../config/config");
 // this request may touch* — and conflating them is how a token that outlives a
 // sign-out ends up still working.
 //
-// The token is stateless: base64url(payload).hmac, with no server-side session
-// store to keep consistent. Signing out clears the cookie; the 7-day expiry in
-// the payload is the backstop.
+// The signed payload carries the account's session version. Middleware checks
+// that persisted version; logout and password reset revoke cookies and org JWTs.
 
 const SESSION_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 
 class SessionFunctions {
+    async hashPasswordAsync(password) {
+        const salt = crypto.randomBytes(16).toString("hex");
+        return `scrypt$${salt}$${(await scrypt(password, salt, 64)).toString("hex")}`;
+    }
+
+    async verifyPasswordAsync(password, stored) {
+        const [scheme, salt, hash] = String(stored || "").split("$");
+        if (scheme !== "scrypt" || !salt || !hash) return false;
+        const candidate = await scrypt(password, salt, 64);
+        const expected = Buffer.from(hash, "hex");
+        return candidate.length === expected.length && crypto.timingSafeEqual(candidate, expected);
+    }
     hashPassword(password) {
         const salt = crypto.randomBytes(16).toString("hex");
         return `scrypt$${salt}$${crypto.scryptSync(password, salt, 64).toString("hex")}`;
@@ -36,14 +49,18 @@ class SessionFunctions {
         return crypto.timingSafeEqual(candidate, expected);
     }
 
-    createSessionToken(accountId) {
-        const payload = Buffer.from(JSON.stringify({ sub: accountId, exp: Date.now() + SESSION_TTL_MS })).toString(
+    createSessionToken(accountId, sessionVersion = 0) {
+        const payload = Buffer.from(JSON.stringify({ sub: accountId, ver: sessionVersion, exp: Date.now() + SESSION_TTL_MS })).toString(
             "base64url"
         );
         return `${payload}.${this._sign(payload)}`;
     }
 
     verifySessionToken(token) {
+        return this.readSessionToken(token)?.sub || null;
+    }
+
+    readSessionToken(token) {
         if (!token) return null;
         const [payload, signature] = String(token).split(".");
         if (!payload || !signature) return null;
@@ -54,15 +71,15 @@ class SessionFunctions {
         if (!crypto.timingSafeEqual(provided, expected)) return null;
 
         try {
-            const { sub, exp } = JSON.parse(Buffer.from(payload, "base64url").toString("utf8"));
-            return exp > Date.now() ? sub : null;
+            const { sub, ver = 0, exp } = JSON.parse(Buffer.from(payload, "base64url").toString("utf8"));
+            return typeof sub === "string" && Number.isInteger(ver) && exp > Date.now() ? { sub, ver, exp } : null;
         } catch (error) {
             return null;
         }
     }
 
-    setSessionCookie(res, accountId) {
-        res.cookie(config.SESSION_COOKIE, this.createSessionToken(accountId), {
+    setSessionCookie(res, accountId, sessionVersion = 0) {
+        res.cookie(config.SESSION_COOKIE, this.createSessionToken(accountId, sessionVersion), {
             httpOnly: true,
             // Lax, not Strict: the OAuth callback arrives as a top-level
             // navigation from Google, and Strict would withhold the cookie we

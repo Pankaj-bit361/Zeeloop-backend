@@ -42,6 +42,13 @@ async function reqOrgOwnerAuth(req, res, next) {
         if (!payload.orgId || payload.orgId !== req.params.orgId) {
             return res.status(403).json({ success: false, error: "Token does not grant access to this org" });
         }
+        const devToken = payload.dev === true && config.ENABLE_DEV_LOGIN && process.env.NODE_ENV !== "production";
+        if (!devToken) {
+            const account = payload.accountId ? await Account.findOne({ accountId: payload.accountId }).select("email emailVerifiedAt sessionVersion").lean() : null;
+            if (!account || !account.emailVerifiedAt || account.email !== payload.email || (account.sessionVersion || 0) !== payload.sessionVersion) {
+                return res.status(401).json({ success: false, error: "Invalid or expired token" });
+            }
+        }
 
         const member = await Member.findOne({
             orgId: payload.orgId,
@@ -77,16 +84,16 @@ async function reqOrgOwnerAuth(req, res, next) {
 // signed-out user cannot keep using a still-valid org token.
 async function reqSessionAuth(req, res, next) {
     try {
-        const accountId = sessionFunctions.verifySessionToken(req.cookies && req.cookies[config.SESSION_COOKIE]);
-        if (!accountId) {
+        const session = sessionFunctions.readSessionToken(req.cookies && req.cookies[config.SESSION_COOKIE]);
+        if (!session) {
             return res.status(401).json({ success: false, error: "Not signed in" });
         }
 
         // Re-read the account on every request rather than trusting the cookie's
         // payload: a deleted account must stop working immediately, not in seven
         // days when its token happens to expire.
-        const account = await Account.findOne({ accountId });
-        if (!account) {
+        const account = await Account.findOne({ accountId: session.sub });
+        if (!account || (account.sessionVersion || 0) !== session.ver) {
             return res.status(401).json({ success: false, error: "Not signed in" });
         }
 

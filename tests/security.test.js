@@ -36,6 +36,9 @@ describe("origin normalisation", () => {
     test("returns null for unparseable input so the caller rejects it", () => {
         assert.equal(securityFunctions.normaliseOrigin(""), null);
         assert.equal(securityFunctions.normaliseOrigin(null), null);
+        for (const value of ["ftp://acme.com", "https://user:secret@acme.com", "https://*.acme.com; script-src *", "https://*.acme.com;script-src*", "https://acme.com;script-src*"]) {
+            assert.equal(securityFunctions.normaliseOrigin(value), null);
+        }
     });
 });
 
@@ -51,12 +54,12 @@ describe("origin allowlist enforcement", () => {
         assert.equal(result.enforced, false);
     });
 
-    test("allows everything when the list is empty, even with enforcement on", () => {
+    test("an enforced empty list fails closed", () => {
         const result = securityFunctions.isOriginAllowed({
             org: org({ enforceOriginAllowlist: true, allowedOrigins: [] }),
             origin: "https://anything.example",
         });
-        assert.equal(result.allowed, true);
+        assert.equal(result.allowed, false);
     });
 
     test("refuses an origin that is not listed", () => {

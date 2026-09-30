@@ -1,3 +1,4 @@
+const { outboundRequest, parseDestination } = require("../utilFunctions/outboundRequest");
 const Action = require("../../models/action/action");
 const ActionExecution = require("../../models/action/actionExecution");
 const {
@@ -43,6 +44,12 @@ class ActionFunctions {
                 return { status: 400, json: { success: false, error: "accessType must be READ or WRITE" } };
             }
 
+            try { parseDestination(urlTemplate); } catch (error) {
+                return { status: 400, json: { success: false, error: error.message } };
+            }
+            if (method && !["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE"].includes(method.toUpperCase())) {
+                return { status: 400, json: { success: false, error: "Unsupported HTTP method" } };
+            }
             const action = await Action.create({
                 orgId,
                 actionId: generalFunctions.generateId(IdPrefix.ACTION),
@@ -56,7 +63,7 @@ class ActionFunctions {
                 ...(secret && { secret: generalFunctions.encrypt(secret) }),
                 enabled: false,
                 requiresIdentity: requiresIdentity !== false,
-                requiresConfirmation: requiresConfirmation !== false,
+                requiresConfirmation: accessType === AccessType.WRITE || requiresConfirmation !== false,
                 lastTestStatus: null,
             });
             return { status: 201, json: { success: true, data: action } };
@@ -80,8 +87,14 @@ class ActionFunctions {
 
             // Changing url, params or secret resets lastTestStatus — the action
             // disappears from the model until it passes a test call again.
-            const resetsTest = urlTemplate !== undefined || params !== undefined || secret !== undefined;
+            const resetsTest = [urlTemplate, params, secret, method, headers, accessType, requiresIdentity].some(value => value !== undefined);
 
+            if (urlTemplate !== undefined) {
+                try { parseDestination(urlTemplate); } catch (error) { return { status: 400, json: { success: false, error: error.message } }; }
+            }
+            if (method && !["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE"].includes(method.toUpperCase())) {
+                return { status: 400, json: { success: false, error: "Unsupported HTTP method" } };
+            }
             const action = await Action.findOneAndUpdate(
                 { orgId, actionId },
                 {
@@ -174,7 +187,7 @@ class ActionFunctions {
 
     // Internal — called by the agent pipeline and the confirm flow, not by routes.
     // Every execution (including blocked ones) leaves an ActionExecution audit row.
-    async executeAction({ orgId, actionId, args, conversationId, endUserId, confirmed, identityVerified }) {
+    async executeAction({ orgId, actionId, args, conversationId, endUserId, confirmed, identityVerified, identity, idempotencyKey }) {
         console.log("ActionFunctions:executeAction: orgId:", orgId, "actionId:", actionId);
         try {
             const action = await Action.findOne({ orgId, actionId }).select("+secret");
@@ -194,27 +207,40 @@ class ActionFunctions {
                 return { success: false, blocked: true, blockReason };
             }
 
-            const callResult = await this._callEndpoint({ action, args });
-            const execution = await this._recordExecution({
-                orgId,
-                actionId,
-                conversationId,
-                endUserId,
-                status: callResult.success ? ExecutionStatus.EXECUTED : ExecutionStatus.FAILED,
-                blockReason: null,
-                request: { method: action.method, url: callResult.url || action.urlTemplate, args },
+            let execution;
+            if (idempotencyKey) {
+                try {
+                    execution = await this._recordExecution({ orgId, actionId, conversationId, endUserId, idempotencyKey,
+                        status: ExecutionStatus.RUNNING, request: { method: action.method, url: action.urlTemplate, args }, response: {} });
+                } catch (error) {
+                    if (error.code !== 11000) throw error;
+                    return { success: false, uncertain: true, error: "This proposal already has an execution. Check its outcome before taking another action." };
+                }
+            }
+            const callResult = await this._callEndpoint({ action, args, identity, idempotencyKey });
+            const finalRecord = {
+                status: callResult.success ? ExecutionStatus.EXECUTED : callResult.uncertain ? ExecutionStatus.UNKNOWN : ExecutionStatus.FAILED,
                 response: { status: callResult.httpStatus, body: callResult.body, durationMs: callResult.durationMs },
-            });
+            };
+            if (execution) {
+                execution.status = finalRecord.status;
+                execution.response = finalRecord.response;
+                execution.request.url = callResult.url || action.urlTemplate;
+                await execution.save();
+            } else {
+                execution = await this._recordExecution({ orgId, actionId, conversationId, endUserId, ...finalRecord,
+                    request: { method: action.method, url: callResult.url || action.urlTemplate, args } });
+            }
 
             if (!callResult.success) {
-                return { success: false, error: callResult.error || `Endpoint returned ${callResult.httpStatus}`, executionId: execution.executionId };
+                return { success: false, uncertain: callResult.uncertain === true, error: callResult.error || `Endpoint returned ${callResult.httpStatus}`, executionId: execution.executionId };
             }
             return { success: true, data: callResult.body, executionId: execution.executionId };
         } catch (error) {
             console.error("ActionFunctions:executeAction: Catch block");
             console.error(error);
             generalFunctions.captureException(error);
-            return { success: false, error: "Action execution failed" };
+            return { success: false, uncertain: Boolean(idempotencyKey), error: "Action execution failed" };
         }
     }
 
@@ -224,13 +250,13 @@ class ActionFunctions {
         if (!action || !action.enabled) return BlockReason.NOT_AVAILABLE;
         if (action.lastTestStatus !== TestStatus.PASS) return BlockReason.NEVER_TESTED;
         if (action.requiresIdentity && !identityVerified) return BlockReason.IDENTITY_REQUIRED;
-        if (action.accessType === AccessType.WRITE && action.requiresConfirmation && !confirmed) {
+        if (action.accessType === AccessType.WRITE && confirmed !== true) {
             return BlockReason.CONFIRMATION_REQUIRED;
         }
         return null;
     }
 
-    async _callEndpoint({ action, args, identity }) {
+    async _callEndpoint({ action, args, identity, idempotencyKey }) {
         const start = Date.now();
 
         // §5.3 — mock response. Lets an action be configured, wired into a
@@ -254,7 +280,7 @@ class ActionFunctions {
 
         // §5.2 — MCP actions call a tool on the customer's own MCP server.
         if (action.kind === ActionKind.MCP) {
-            return this._callMcp({ action, args, start });
+            return this._callMcp({ action, args, start, idempotencyKey });
         }
 
         try {
@@ -270,6 +296,7 @@ class ActionFunctions {
             }
 
             const headers = { "content-type": "application/json", ...(action.headers || {}) };
+            if (idempotencyKey) headers["idempotency-key"] = idempotencyKey;
             const authorised = await this._applyCredential({ action, headers });
             if (!authorised.success) {
                 return { success: false, error: authorised.error, durationMs: Date.now() - start };
@@ -294,7 +321,8 @@ class ActionFunctions {
             }
 
             const method = (action.method || "GET").toUpperCase();
-            const response = await fetch(url, {
+            const response = await outboundRequest(url, {
+                redirect: "error",
                 method,
                 headers,
                 ...(method !== "GET" && method !== "HEAD" && { body: JSON.stringify(bodyArgs) }),
@@ -316,7 +344,7 @@ class ActionFunctions {
                 ...(response.ok ? {} : { error: `Endpoint returned ${response.status}` }),
             };
         } catch (error) {
-            return { success: false, error: error.message, durationMs: Date.now() - start };
+            return { success: false, uncertain: action.accessType === AccessType.WRITE, error: "The endpoint outcome could not be verified. Check the execution before retrying.", durationMs: Date.now() - start };
         }
     }
 
@@ -328,7 +356,7 @@ class ActionFunctions {
     // Worth building over adding REST config forms one vendor at a time: Stripe,
     // Linear and Shopify all publish MCP servers, so one integration reaches all
     // of a customer's existing tools rather than one of them.
-    async _callMcp({ action, args, start }) {
+    async _callMcp({ action, args, start, idempotencyKey }) {
         try {
             const serverUrl = action.mcp && action.mcp.serverUrl;
             const toolName = action.mcp && action.mcp.toolName;
@@ -342,12 +370,14 @@ class ActionFunctions {
                 accept: "application/json, text/event-stream",
                 ...(action.headers || {}),
             };
+            if (idempotencyKey) headers["idempotency-key"] = idempotencyKey;
             const authorised = await this._applyCredential({ action, headers });
             if (!authorised.success) {
                 return { success: false, error: authorised.error, durationMs: Date.now() - start };
             }
 
-            const response = await fetch(serverUrl, {
+            const response = await outboundRequest(serverUrl, {
+                redirect: "error",
                 method: "POST",
                 headers,
                 body: JSON.stringify({
@@ -412,7 +442,7 @@ class ActionFunctions {
                 durationMs: Date.now() - start,
             };
         } catch (error) {
-            return { success: false, error: error.message, durationMs: Date.now() - start };
+            return { success: false, uncertain: action.accessType === AccessType.WRITE, error: "The endpoint outcome could not be verified. Check the execution before retrying.", durationMs: Date.now() - start };
         }
     }
 
@@ -505,12 +535,13 @@ class ActionFunctions {
         const missing = [];
 
         for (const input of inputs) {
-            if (resolved[input.name] !== undefined && resolved[input.name] !== null && resolved[input.name] !== "") continue;
-
-            if (input.source === DataInputSource.IDENTITY && context && context.email) {
-                resolved[input.name] = context.email;
+            if (input.source === DataInputSource.IDENTITY) {
+                if (context && context.email && context.identityVerified === true) resolved[input.name] = context.email;
+                else { delete resolved[input.name]; if (input.required) missing.push({ name: input.name, source: input.source, prompt: "Please sign in to verify your identity." }); }
                 continue;
             }
+            if (resolved[input.name] !== undefined && resolved[input.name] !== null && resolved[input.name] !== "") continue;
+
             if (input.source === DataInputSource.PRIOR_ACTION && context && context.priorResults && input.path) {
                 const value = input.path.split(".").reduce((node, key) => (node == null ? undefined : node[key]), context.priorResults);
                 if (value !== undefined) {
@@ -541,10 +572,11 @@ class ActionFunctions {
         return { ready: missing.length === 0, missing, resolved };
     }
 
-    async _recordExecution({ orgId, actionId, conversationId, endUserId, status, blockReason, request, response }) {
+    async _recordExecution({ orgId, actionId, conversationId, endUserId, status, blockReason, request, response, idempotencyKey }) {
         const execution = await ActionExecution.create({
             orgId,
             executionId: generalFunctions.generateId(IdPrefix.ACTION_EXECUTION),
+            ...(idempotencyKey && { idempotencyKey }),
             actionId,
             conversationId: conversationId || null,
             endUserId: endUserId || null,

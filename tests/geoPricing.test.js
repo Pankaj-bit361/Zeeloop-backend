@@ -73,6 +73,8 @@ describe("GET /billing — currency follows the workspace, not the request", () 
         const email = `in-${Date.now()}@example.com`;
         const signup = await post("/api/auth/signup", { body: { name: "Priya", email, password: "password123-strong" } });
         const cookie = signup.setCookie.split(";")[0];
+        const verified = await post("/api/auth/verify-email", { cookie, body: { token: new URL(signup.json.data.verificationUrl).searchParams.get("token") } });
+        assert.equal(verified.status, 200);
         const created = await post("/api/auth/orgs", {
             body: { name: "Bharat Co", website: "https://example.in" },
             cookie,

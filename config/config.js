@@ -28,6 +28,9 @@ const DEFAULT_ENCRYPTION_KEY = "000000000000000000000000000000000000000000000000
    has explicitly said this is a development machine. An unset variable is the
    dangerous case, so an unset variable is the one that stops the boot. */
 const ALLOW_INSECURE = process.env.ALLOW_INSECURE_DEFAULTS === "true";
+if (ALLOW_INSECURE && process.env.NODE_ENV === "production") {
+    throw new Error("ALLOW_INSECURE_DEFAULTS cannot be enabled in production");
+}
 
 const INSECURE = [
     ["SESSION_SECRET", SESSION_SECRET, DEFAULT_SESSION_SECRET],
@@ -57,6 +60,7 @@ module.exports = {
     // Explicit opt-in for the dev-login route. Anything but the exact string
     // "true" — including absence — leaves it off. See authFunctions.devLogin.
     ENABLE_DEV_LOGIN: process.env.ENABLE_DEV_LOGIN === "true",
+    ALLOW_TEST_LOOPBACK: process.env.ALLOW_TEST_LOOPBACK === "true" && process.env.NODE_ENV === "test",
 
     // ── dashboard sign-in ──
     SESSION_SECRET,
@@ -72,6 +76,9 @@ module.exports = {
     // OAuth provider exactly, port included.
     API_URL: process.env.API_URL || `http://localhost:${PORT}`,
     DISABLE_SIGNUPS: process.env.DISABLE_SIGNUPS === "true",
+    // Local test links must be explicitly enabled; an unset NODE_ENV is not
+    // permission to expose account recovery tokens.
+    ALLOW_DEV_AUTH_LINKS: process.env.ALLOW_DEV_AUTH_LINKS === "true" && process.env.NODE_ENV !== "production",
 
     // ── OAuth providers (optional — the buttons hide themselves when unset) ──
     GOOGLE_CLIENT_ID: process.env.GOOGLE_CLIENT_ID || "",
@@ -252,6 +259,10 @@ module.exports = {
     // Widget endpoints are public by design, so these are the only thing
     // between a scraped publicKey and an unbounded model bill.
     RATE_LIMIT_WINDOW_MS: Number(process.env.RATE_LIMIT_WINDOW_MS || 60_000),
+    TRUST_PROXY: !process.env.TRUST_PROXY || process.env.TRUST_PROXY === "false" ? false
+        : /^\d+$/.test(process.env.TRUST_PROXY) ? Number(process.env.TRUST_PROXY) : process.env.TRUST_PROXY,
+    AUTH_RATE_LIMIT_PER_IP: Number(process.env.AUTH_RATE_LIMIT_PER_IP || 30),
+    AUTH_RATE_LIMIT_PER_ACCOUNT: Number(process.env.AUTH_RATE_LIMIT_PER_ACCOUNT || 10),
     // The widget polls for live delivery, so a single legitimate visitor spends
     // from this bucket without touching the keyboard: ~12/min with a
     // conversation open and moving, ~4/min once it goes quiet, ~1/min while the
@@ -292,6 +303,7 @@ module.exports = {
     EMAIL_INBOUND_SECRET: process.env.EMAIL_INBOUND_SECRET || "",
     // Trial and dunning crons. Both are idempotent via EmailLog's unique index.
     LIFECYCLE_CRON: process.env.LIFECYCLE_CRON || "0 9 * * *",
+    SCHEDULED_JOBS_ENABLED: process.env.SCHEDULED_JOBS_ENABLED !== "false",
 
     // ── Setup wizard and brand import (§1.6, §1.7) ───────────────────
     BRANDFETCH_API_KEY: process.env.BRANDFETCH_API_KEY || "",

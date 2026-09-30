@@ -740,6 +740,15 @@ class AgentFunctions {
 
             if (output.type === "tool_call") {
                 const action = availableActions.find((candidate) => candidate.actionId === output.actionId) || null;
+                if (action) {
+                    const resolved = actionFunctions.resolveDataInputs({ action, args: output.args || {},
+                        context: { email: endUser?.email, identityVerified } });
+                    output.args = resolved.resolved;
+                    if (resolved.missing.length) {
+                        return { reply: resolved.missing.map((input) => input.prompt).join(" "),
+                            citations: [], toolCalls, outcome: TurnOutcome.CLARIFIED, halted: false };
+                    }
+                }
                 const blockReason = await this._checkGuards({
                     action,
                     args: output.args,
@@ -761,7 +770,7 @@ class AgentFunctions {
                         toolCalls,
                         outcome: TurnOutcome.CLARIFIED,
                         halted: true,
-                        pendingAction: { actionId: action.actionId, args: output.args },
+                        pendingAction: { actionId: action.actionId, args: output.args, endUserId: endUser ? endUser.endUserId : null },
                     };
                 }
 
@@ -791,6 +800,7 @@ class AgentFunctions {
                     endUserId: endUser ? endUser.endUserId : null,
                     confirmed: false,
                     identityVerified,
+                    identity: endUser ? { email: endUser.email, verified: identityVerified } : null,
                 });
                 toolCalls.push({
                     actionId: action.actionId,
@@ -875,7 +885,7 @@ class AgentFunctions {
         if (!action || !action.enabled) return BlockReason.NOT_AVAILABLE;
         if (action.lastTestStatus !== "PASS") return BlockReason.NEVER_TESTED;
         if (action.requiresIdentity && !identityVerified) return BlockReason.IDENTITY_REQUIRED;
-        if (action.accessType === AccessType.WRITE && action.requiresConfirmation && !confirmed) {
+        if (action.accessType === AccessType.WRITE && confirmed !== true) {
             return BlockReason.CONFIRMATION_REQUIRED;
         }
         return null;

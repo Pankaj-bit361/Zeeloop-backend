@@ -51,6 +51,7 @@ router.post("/actions/confirm", async (req, res) => {
             publicKey: req.body.publicKey,
             conversationId: req.body.conversationId,
             confirmed: req.body.confirmed,
+            proposalId: req.body.proposalId,
             identity: req.body.identity,
         });
         return res.status(status).json(json);
@@ -128,4 +129,3 @@ router.post("/rtm/connect", async (req, res) => {
 });
 
 module.exports = router;
-

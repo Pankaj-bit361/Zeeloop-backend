@@ -3,6 +3,7 @@ const EndUser = require("../../models/user/endUser");
 const Chunk = require("../../models/knowledge/chunk");
 const KnowledgeSource = require("../../models/knowledge/knowledgeSource");
 const Action = require("../../models/action/action");
+const ActionExecution = require("../../models/action/actionExecution");
 const Conversation = require("../../models/conversation/conversation");
 const Message = require("../../models/conversation/message");
 const TurnTrace = require("../../models/trace/turnTrace");
@@ -103,16 +104,31 @@ class ChatFunctions {
                 ? await Conversation.findOne({ orgId: org.orgId, conversationId: asId(conversationId) })
                 : null;
 
+            if (conversation) await this._recoverInterruptedAction(conversation);
+            if (conversation?.pendingAction?.state === "PENDING" && conversation.pendingAction.expiresAt
+                && new Date(conversation.pendingAction.expiresAt).getTime() <= Date.now()) {
+                const expired = await Conversation.findOneAndUpdate({ orgId: org.orgId, conversationId: conversation.conversationId,
+                    "pendingAction.proposalId": conversation.pendingAction.proposalId, "pendingAction.state": "PENDING",
+                    "pendingAction.expiresAt": { $lte: new Date() } }, { $set: { pendingAction: { actionId: null, args: null } } }, { new: true });
+                if (expired) conversation.pendingAction = expired.pendingAction;
+            }
+
             const messages = conversation
                 ? await Message.find({ orgId: org.orgId, conversationId: conversation.conversationId })
-                      .sort({ createdAt: 1 })
+                      .sort({ createdAt: -1, _id: -1 })
                       .limit(100)
                 : [];
+            messages.reverse();
 
             // A reload mid-confirmation must not lose the confirm card — surface
             // the pending action so the widget can re-render it.
             let pendingAction = null;
-            if (conversation && conversation.pendingAction && conversation.pendingAction.actionId) {
+            if (conversation && conversation.pendingAction && conversation.pendingAction.actionId && conversation.pendingAction.state === "PENDING") {
+                if (!conversation.pendingAction.proposalId) {
+                    const upgraded = await Conversation.findOneAndUpdate({ orgId: org.orgId, conversationId: conversation.conversationId, "pendingAction.proposalId": { $exists: false } },
+                        { $set: { "pendingAction.proposalId": generalFunctions.generateId("proposal"), "pendingAction.expiresAt": new Date(Date.now() + 15 * 60_000) } }, { new: true });
+                    if (upgraded) conversation.pendingAction = upgraded.pendingAction;
+                }
                 const pendingId = conversation.pendingAction.actionId;
                 const action = await Action.findOne({ orgId: org.orgId, actionId: pendingId });
                 // The action may have been renamed or deleted since the turn ran;
@@ -121,6 +137,7 @@ class ChatFunctions {
                     .flatMap((message) => message.toolCalls || [])
                     .find((tool) => tool.actionId === pendingId && tool.actionName)?.actionName;
                 pendingAction = {
+                    proposalId: conversation.pendingAction.proposalId,
                     actionId: pendingId,
                     actionName: (action && action.name) || proposedName || pendingId,
                     args: conversation.pendingAction.args || {},
@@ -196,8 +213,9 @@ class ChatFunctions {
     // conversation lazily, so opening the widget never spawns empty rows.
     async sendMessage({ publicKey, conversationId, content, identity, ip }) {
         console.log("ChatFunctions:sendMessage: conversationId:", conversationId);
+        let lease = null;
         try {
-            if (!publicKey || !content) {
+            if (!publicKey || typeof content !== "string" || !content.trim() || content.length > 4000) {
                 return {
                     status: 400,
                     json: { success: false, error: "Invalid request. Please pass publicKey and content" },
@@ -255,11 +273,23 @@ class ChatFunctions {
                 });
             }
             conversationId = conversation.conversationId;
+            await this._recoverInterruptedAction(conversation);
+
+            // The lease is shared by every API process. A second turn cannot
+            // overwrite an approval while the first turn or its action runs.
+            const leaseId = generalFunctions.generateId("turn");
+            conversation = await Conversation.findOneAndUpdate({ orgId: org.orgId, conversationId,
+                "pendingAction.state": { $ne: "EXECUTING" },
+                $or: [{ "turnLease.expiresAt": { $exists: false } }, { "turnLease.expiresAt": { $lte: new Date() } }],
+            }, { $set: { turnLease: { id: leaseId, expiresAt: new Date(Date.now() + 5 * 60_000) } } }, { new: true });
+            if (!conversation) return { status: 409, json: { success: false, error: "A reply or action is already in progress. Please wait before sending again." } };
+            lease = { orgId: org.orgId, conversationId, "turnLease.id": leaseId };
 
             const history = await Message.find({ orgId: org.orgId, conversationId })
-                .sort({ createdAt: 1 })
+                .sort({ createdAt: -1, _id: -1 })
                 .limit(50)
                 .lean();
+            history.reverse();
 
             const visitorMessage = await Message.create({
                 orgId: org.orgId,
@@ -277,6 +307,12 @@ class ChatFunctions {
             // would sit silent through the exact event it most needs to know
             // about — the customer actually saying something.
             realtimeHub.publish(org.orgId, conversationId, { type: "message", message: visitorMessage.toJSON() });
+
+            if (conversation.status === ConversationStatus.ESCALATED || conversation.hasHumanReply) {
+                await Conversation.updateOne(lease, { $set: { lastMessageAt: new Date(), lastMessagePreview: content.slice(0, 140) } });
+                return { status: 200, json: { success: true, data: { conversationId, awaitingHuman: true,
+                    message: { role: MessageRole.ASSISTANT, content: "The team has your message and will reply here." }, awaitingConfirmation: false } } };
+            }
 
             // Quota is checked after the question is stored, not before (§0.3).
             // A workspace that hits its ceiling still wants to see what its
@@ -333,6 +369,14 @@ class ChatFunctions {
                 onProgress: (progress) => realtimeHub.publish(org.orgId, conversationId, { type: "progress", ...progress }),
             });
 
+            // A teammate may take over while the model is still generating.
+            // Read persisted ownership again before publishing its response.
+            const latest = await Conversation.findOne(lease).select("status hasHumanReply").lean();
+            if (!latest || latest.status === ConversationStatus.ESCALATED || latest.hasHumanReply) {
+                return { status: 200, json: { success: true, data: { conversationId, awaitingHuman: true,
+                    message: { role: MessageRole.ASSISTANT, content: "The team has your message and will reply here." }, awaitingConfirmation: false } } };
+            }
+
             const assistantMessage = await Message.create({
                 orgId: org.orgId,
                 messageId: generalFunctions.generateId(IdPrefix.MESSAGE),
@@ -351,7 +395,9 @@ class ChatFunctions {
             if (turn.escalate || turn.outcome === TurnOutcome.ESCALATED) {
                 conversation.status = ConversationStatus.ESCALATED;
             }
-            conversation.pendingAction = turn.halted && turn.pendingAction ? turn.pendingAction : { actionId: null, args: null };
+            conversation.pendingAction = turn.halted && turn.pendingAction ? {
+                ...turn.pendingAction, proposalId: generalFunctions.generateId("proposal"), state: "PENDING", expiresAt: new Date(Date.now() + 15 * 60_000),
+            } : { actionId: null, args: null };
             if (endUser && !conversation.endUserId) {
                 conversation.endUserId = endUser.endUserId;
             }
@@ -422,6 +468,7 @@ class ChatFunctions {
                         message: assistantMessage,
                         outcome: turn.outcome,
                         awaitingConfirmation: !!turn.halted,
+                        pendingAction: turn.halted ? conversation.pendingAction : null,
                         // §4.6 — the rich response contract. Built from the
                         // turn's real state by code that knows a guard actually
                         // fired, never emitted by the model. A widget that does
@@ -436,11 +483,29 @@ class ChatFunctions {
             console.error(error);
             generalFunctions.captureException(error);
             return { status: 500, json: { success: false, error: "Internal server error, please contact support" } };
+        } finally {
+            if (lease) await Conversation.updateOne(lease, { $unset: { turnLease: "" } }).catch((error) => generalFunctions.captureException(error));
         }
     }
 
+    // Interrupted writes have unknown outcomes. Escalate for investigation;
+    // never infer failure or retry a potentially completed customer action.
+    async _recoverInterruptedAction(conversation) {
+        const pending = conversation.pendingAction;
+        const startedAt = pending?.startedAt || conversation.updatedAt;
+        if (pending?.state !== "EXECUTING" || !startedAt || Date.now() - new Date(startedAt).getTime() < 5 * 60_000) return;
+        const recovered = await Conversation.findOneAndUpdate({ orgId: conversation.orgId, conversationId: conversation.conversationId,
+            "pendingAction.proposalId": pending.proposalId, "pendingAction.state": "EXECUTING",
+            updatedAt: conversation.updatedAt }, { $set: { "pendingAction.state": "UNKNOWN", status: ConversationStatus.ESCALATED } }, { new: true });
+        if (!recovered) return;
+        conversation.pendingAction = recovered.pendingAction;
+        conversation.status = recovered.status;
+        await ActionExecution.updateMany({ orgId: conversation.orgId, idempotencyKey: pending.proposalId, status: "RUNNING" },
+            { $set: { status: "UNKNOWN", error: "Execution interrupted; verify the outcome before any manual retry" } });
+    }
+
     // POST /api/widget/actions/confirm — executes the write action proposed last turn.
-    async confirmAction({ publicKey, conversationId, confirmed, identity }) {
+    async confirmAction({ publicKey, conversationId, confirmed, identity, proposalId }) {
         console.log("ChatFunctions:confirmAction: conversationId:", conversationId);
         try {
             if (!publicKey || !conversationId) {
@@ -458,11 +523,25 @@ class ChatFunctions {
                 return { status: 404, json: { success: false, error: "Conversation not found" } };
             }
             const pending = conversation.pendingAction;
-            if (!pending || !pending.actionId) {
+            if (!pending || !pending.actionId || pending.state !== "PENDING") {
                 return { status: 409, json: { success: false, error: "No action awaiting confirmation" } };
             }
 
+            if (typeof confirmed !== "boolean") {
+                return { status: 400, json: { success: false, error: "Confirmation must be an explicit true or false" } };
+            }
+            if (typeof proposalId !== "string" || proposalId !== pending.proposalId) {
+                return { status: 409, json: { success: false, error: "This proposal has changed. Refresh the conversation before confirming." } };
+            }
             const { endUser, identityVerified } = await this._resolveIdentity({ org, identity });
+            if (pending.endUserId && (!identityVerified || !endUser || pending.endUserId !== endUser.endUserId)) {
+                return { status: 403, json: { success: false, error: "Confirm using the same verified identity that requested this action" } };
+            }
+            const claimed = await Conversation.findOneAndUpdate({ orgId: org.orgId, conversationId: asId(conversationId),
+                "pendingAction.proposalId": proposalId, "pendingAction.state": "PENDING", "pendingAction.expiresAt": { $gt: new Date() },
+                $or: [{ "turnLease.expiresAt": { $exists: false } }, { "turnLease.expiresAt": { $lte: new Date() } }],
+            }, { $set: { "pendingAction.state": "EXECUTING", "pendingAction.startedAt": new Date() } }, { new: true });
+            if (!claimed) return { status: 409, json: { success: false, error: "This proposal has expired or is already being processed. Refresh the conversation." } };
 
             let replyContent;
             let toolCalls = [];
@@ -478,6 +557,8 @@ class ChatFunctions {
                     endUserId: endUser ? endUser.endUserId : null,
                     confirmed: true,
                     identityVerified,
+                    identity: endUser ? { email: endUser.email, verified: identityVerified } : null,
+                    idempotencyKey: proposalId,
                 });
                 if (execution.success) {
                     replyContent = "Done! That's taken care of. Anything else I can help with?";
@@ -489,6 +570,10 @@ class ChatFunctions {
                             executionId: execution.executionId,
                         },
                     ];
+                } else if (execution.uncertain) {
+                    replyContent = "The action's outcome could not be verified. Please wait for the team to check it before requesting it again.";
+                    conversation.status = ConversationStatus.ESCALATED;
+                    toolCalls = [{ actionId: pending.actionId, args: pending.args, status: ToolCallStatus.BLOCKED, executionId: execution.executionId || null }];
                 } else if (execution.blocked) {
                     replyContent = "I wasn't able to run that action — I've flagged this conversation for the team.";
                     toolCalls = [{ actionId: pending.actionId, args: pending.args, status: ToolCallStatus.BLOCKED }];
@@ -516,10 +601,9 @@ class ChatFunctions {
                 toolCalls,
             });
 
-            conversation.pendingAction = { actionId: null, args: null };
-            conversation.lastMessageAt = new Date();
-            await conversation.save();
-
+            await Conversation.updateOne({ orgId: org.orgId, conversationId: asId(conversationId), "pendingAction.proposalId": proposalId, "pendingAction.state": "EXECUTING" },
+                { $set: { pendingAction: { actionId: null, args: null }, lastMessageAt: new Date(), status: conversation.status } });
+            realtimeHub.publish(org.orgId, conversationId, { type: "message", message: message.toJSON() });
             return { status: 200, json: { success: true, data: { message } } };
         } catch (error) {
             console.error("ChatFunctions:confirmAction: Catch block");

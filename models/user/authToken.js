@@ -9,6 +9,7 @@ const authTokenSchema = new mongoose.Schema(
     {
         tokenId: { type: String, required: true, unique: true },
         accountId: { type: String, required: true, index: true },
+        sessionVersion: { type: Number, default: null },
         token: { type: String, required: true, unique: true },
         purpose: { type: String, enum: Object.values(TokenPurpose), required: true },
         expiresAt: { type: Date, required: true },

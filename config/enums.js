@@ -69,6 +69,8 @@ const GateSentiment = {
 };
 
 const ExecutionStatus = {
+    RUNNING: "RUNNING",
+    UNKNOWN: "UNKNOWN",
     EXECUTED: "EXECUTED",
     FAILED: "FAILED",
     BLOCKED: "BLOCKED",

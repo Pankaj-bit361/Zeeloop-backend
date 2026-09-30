@@ -136,7 +136,7 @@ Public (widget, CORS `*`, no auth — identity via HMAC-signed `identify()` payl
 ```
 POST /api/widget/bootstrap          { publicKey, conversationId?, identity? }
 POST /api/widget/messages           { publicKey, conversationId, content, identity? }
-POST /api/widget/actions/confirm    { publicKey, conversationId, confirmed, identity? }
+POST /api/widget/actions/confirm    { publicKey, conversationId, proposalId, confirmed: boolean, identity? }
 POST /api/widget/feedback           { publicKey, conversationId, rating: UP|DOWN }
 ```
 
@@ -147,7 +147,9 @@ caller is; on its own it grants access to no workspace data:
 GET   /api/auth/config              which sign-in methods this server offers
 POST  /api/auth/signup              { name, email, password } -> sets session cookie
 POST  /api/auth/login               { email, password }       -> sets session cookie
-POST  /api/auth/logout              clears the cookie
+POST  /api/auth/logout              revokes existing sessions and org JWTs, clears the cookie
+POST  /api/auth/verification        resend mailbox verification (session required)
+POST  /api/auth/verify-email        { token } (session required; explicit confirmation)
 GET   /api/auth/me                  { user, orgs[] }
 PATCH /api/auth/me                  { name }
 POST  /api/auth/token               { orgId } -> org JWT, after a membership check
@@ -260,8 +262,68 @@ seats in several workspaces, and `Member` is the join, keyed on the verified
 email. That is also why an OAuth address is only trusted once the provider
 reports it verified.
 
-Deferred per spec §13: SITEMAP crawling and FILE parsing (`501`), inline→worker
-crawls, email channel, and real billing/checkout. Password-reset links have no
-mail provider yet — outside production the link is returned in the response and
-logged; in production the flow is a no-op until delivery is wired up. Plan
-gating is enforced in the UI from `org.credits.plan`, not yet in the API.
+Sitemap crawling, file ingestion, crawl workers, email delivery/channel,
+billing adapters, and server-side plan gates are implemented. Their live
+provider and infrastructure behavior still needs deployment-specific validation.
+
+## Verification and production setup
+
+`npm test` creates a unique `zealoop_test_*` database on local MongoDB, seeds
+it, starts an API on an ephemeral port with deterministic model fixtures,
+runs the complete suite, and drops only that database. It never uses the
+ordinary development or production database. Set `TEST_MONGO_HOST` only to a
+local MongoDB host if port 27017 is unavailable. Fixtures verify API behavior;
+they do not measure model quality or Atlas retrieval accuracy.
+
+`npm run test:browser` uses the same disposable runner for Chromium checks of
+chat, live human replies, handoff, approval, cancellation, and replay rejection.
+Install its browser once with `npx playwright install chromium`. CI installs
+Chromium and retains screenshots from these flows; the browser job is distinct
+from the API/unit suite.
+
+For isolated browser testing, run `node scripts/runTests.js --serve`. It prints
+the temporary API URL and an `environment.json` path for the widget browser
+suites. Stop it with Ctrl+C to clean up the API and its disposable database.
+
+Configure `EMAIL_API_KEY` and a verified `EMAIL_FROM` sender in Resend for
+verification and password recovery. Without delivery, production signup and
+recovery fail explicitly. `ALLOW_DEV_AUTH_LINKS=true` exposes links only on an
+explicitly configured development/test instance; it is ignored in production.
+Tokens expire in one hour, are stored hashed, and are consumed atomically.
+Existing unverified accounts must verify their mailbox before using seats.
+
+Logout and password reset increment the persisted session version. Old org
+JWTs without an account/version must be replaced by signing in again after
+deployment. OAuth ownership of a previously unverified address clears any
+password planted before mailbox ownership was proved.
+
+Set `TRUST_PROXY` to the actual ingress proxy CIDRs, or a fixed hop count only
+when every path to the application has exactly that topology. Forwarded IP
+headers are ignored by default; HTTP and WebSocket requests share the trust
+policy. Auth and widget request budgets use atomic MongoDB counters. Write
+approvals and chat leases are also shared across API instances. MongoDB events
+relay messages to sockets on other instances; reconnect fetches persisted
+history. Socket connection counts remain per process.
+Run scheduled jobs on one designated instance and set
+`SCHEDULED_JOBS_ENABLED=false` on other API replicas. Schedules use UTC,
+await readiness, and prevent overlap within an instance. Crawl job leases
+remain independent of the scheduler flag. Scheduler failover still needs an
+operational plan; these schedules do not provide distributed leader election.
+
+Origin enforcement sets a workspace-specific `frame-ancestors` policy on the
+messenger HTML. The browser checks actual embedding ancestors while the
+iframe's own API origin remains allowed. Frame HTML with a real workspace key
+is not cached, so an updated embedding policy is checked on the next reload.
+This is an abuse barrier for browser embedding, not a replacement for verified
+identity or request budgets; server-to-server clients can forge Origin.
+
+Readiness requires the database and critical unique/TTL indexes. Route traffic
+only after `/ready` returns 200. User-controlled outbound requests validate
+every DNS address/redirect, pin the connection address, and enforce deadlines
+and byte limits. `ALLOW_TEST_LOOPBACK` is effective only under `NODE_ENV=test`.
+
+Writes require a fresh boolean approval and proposal ID. Duplicate execution
+keys never repeat the network call. An uncertain or interrupted write is
+escalated for human investigation, without automatic retry. The model receives
+the latest 50 history messages; widget reloads receive the latest 100. Human
+handoff suppresses AI replies, including a takeover during generation.

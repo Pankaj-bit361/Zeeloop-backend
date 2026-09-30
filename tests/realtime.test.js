@@ -89,8 +89,12 @@ describe("realtimeHub — a dashboard subscriber sees both sides of the conversa
 
             // Two events are expected off this one turn: the visitor's message
             // (this is the one that was missing) and the assistant's reply.
-            const first_event = await next();
-            const second_event = await next();
+            const messageEvents = [];
+            while (messageEvents.length < 2) {
+                const event = await next();
+                if (event.type === "message") messageEvents.push(event);
+            }
+            const [first_event, second_event] = messageEvents;
             await sendSecond;
 
             const roles = [first_event, second_event].map((event) => event.message.role);

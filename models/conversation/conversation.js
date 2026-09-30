@@ -74,9 +74,15 @@ const conversationSchema = new mongoose.Schema(
         manuallyResolvedAt: { type: Date, default: null },
         // a write action proposed last turn, waiting on the user's yes
         pendingAction: {
+            proposalId: { type: String },
             actionId: { type: String },
             args: { type: mongoose.Schema.Types.Mixed },
+            endUserId: { type: String, default: null },
+            expiresAt: { type: Date },
+            startedAt: { type: Date },
+            state: { type: String, enum: ["PENDING", "EXECUTING", "UNKNOWN"], default: "PENDING" },
         },
+        turnLease: { id: String, expiresAt: Date },
     },
     {
         timestamps: true,
