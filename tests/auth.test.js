@@ -166,6 +166,25 @@ describe("GET/POST /api/auth/orgs", () => {
         assert.equal(check.json.data.name, "onboarding-test Co");
     });
 
+    test("an existing account can create a second organization while org tokens stay isolated", async () => {
+        const first = await createIsolatedOrg("second-organization");
+        const created = await post("/api/auth/orgs", { cookie: first.cookie, body: { name: "Second Company", website: "https://second.example" } });
+        assert.equal(created.status, 201);
+        const secondId = created.json.data.orgId;
+        assert.notEqual(secondId, first.orgId);
+        assert.equal(created.json.data.role, "OWNER");
+        const listed = await get("/api/auth/orgs", { cookie: first.cookie });
+        assert.ok(listed.json.data.some(org => org.orgId === first.orgId));
+        assert.ok(listed.json.data.some(org => org.orgId === secondId));
+        const minted = await post("/api/auth/token", { cookie: first.cookie, body: { orgId: secondId } });
+        assert.equal(minted.status, 200);
+        const second = await get(`/api/org/${secondId}/settings`, { headers: authHeader(minted.json.data.token) });
+        assert.equal(second.status, 200); assert.equal(second.json.data.name, "Second Company");
+        assert.notEqual(second.json.data.publicKey, first.publicKey);
+        assert.equal((await get(`/api/org/${secondId}/settings`, { headers: authHeader(first.token) })).status, 403);
+        assert.equal((await get(`/api/org/${first.orgId}/settings`, { headers: authHeader(minted.json.data.token) })).status, 403);
+    });
+
     test("POST onboarding rejects an empty workspace name", async () => {
         const email = `emptyname-${randomSuffix()}@example.com`;
         const signup = await post("/api/auth/signup", { body: { name: "X", email, password: "password123" } });
