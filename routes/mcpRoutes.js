@@ -13,7 +13,9 @@ const { consumeShared, clientIp } = require("../middlewares/rateLimit");
 const install = require("../functions/mcp/installFunctions");
 
 const management = express.Router();
-management.use("/:orgId/mcp/tokens", reqOrgOwnerAuth, requireRole(...OWNER_OR_ADMIN));
+management.use("/:orgId/mcp/tokens", (req, res, next) => {
+    res.setHeader("Cache-Control", "private, no-store"); next();
+}, reqOrgOwnerAuth, requireRole(...OWNER_OR_ADMIN));
 management.get("/:orgId/mcp/tokens", async (req, res, next) => {
     try { res.json({ success: true, data: await install.listTokens(req.params.orgId) }); } catch (error) { next(error); }
 });
@@ -70,7 +72,15 @@ function serverFor(orgId) {
 }
 endpoint.all("/", async (req, res, next) => {
     const handler = createMcpHandler(() => serverFor(req.installOrgId), { legacy: "stateless" });
-    try { await toNodeHandler(handler, { maxRequestBodySize: 65_536 })(req, res, req.body); }
+    // SSE responses carry SDK cache headers; preserve our privacy policy after
+    // dispatch so writeHead cannot replace it with the transport's defaults.
+    const privateHandler = { fetch: async (...args) => {
+        const response = await handler.fetch(...args);
+        const headers = new Headers(response.headers);
+        headers.set("Cache-Control", "private, no-store");
+        return new Response(response.body, { status: response.status, statusText: response.statusText, headers });
+    } };
+    try { await toNodeHandler(privateHandler, { maxRequestBodySize: 65_536 })(req, res, req.body); }
     catch (error) { next(error); }
     finally { await handler.close(); }
 });

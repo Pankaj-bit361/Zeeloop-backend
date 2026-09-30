@@ -77,14 +77,26 @@ app.use(helmet());
 // produces different bytes — different key order, different whitespace — so a
 // signature checked against it never matches. Capped so a large upload cannot
 // be retained twice.
-app.use(
-    express.json({
-        limit: config.JSON_BODY_LIMIT,
-        verify: (req, res, buf) => {
-            if (buf && buf.length && buf.length <= 1_000_000) req.rawBody = buf;
-        },
-    })
-);
+const jsonBody = express.json({
+    limit: config.JSON_BODY_LIMIT,
+    verify: (req, res, buf) => {
+        if (buf && buf.length && buf.length <= 1_000_000) req.rawBody = buf;
+    },
+});
+const isMcpPath = req => /^\/mcp\/?$/i.test(req.path);
+// The SDK's Node adapter receives req.body, so its stream-size limit cannot
+// bound JSON already parsed by Express. Enforce the smaller MCP limit here,
+// including whitespace and decoded compressed bodies.
+const mcpJsonBody = express.json({ limit: 65_536 });
+app.use((req, res, next) => (isMcpPath(req) ? mcpJsonBody : jsonBody)(req, res, next));
+app.use((error, req, res, next) => {
+    if (!isMcpPath(req) || ![400, 413, 415].includes(error.status)) return next(error);
+    res.setHeader("Cache-Control", "private, no-store");
+    const message = error.status === 413 ? "MCP request exceeds the 64 KiB limit"
+        : error.status === 415 ? "Unsupported MCP request encoding" : "Invalid JSON request";
+    return res.status(error.status).json({ jsonrpc: "2.0", id: null,
+        error: { code: error.status === 400 ? -32700 : -32600, message } });
+});
 app.use(cookieParser());
 
 /* §8.6 — reject MongoDB operator syntax in anything a client sends, before it
@@ -96,7 +108,7 @@ app.use(cookieParser());
    it matters and a legitimate one still verifies against the original bytes. */
 // MCP metadata uses namespaced dotted keys. Its SDK validates the JSON-RPC
 // envelope and every tool's strict schema; no body object reaches MongoDB.
-app.use((req, res, next) => /^\/mcp\/?$/.test(req.path) ? next() : sanitize(req, res, next));
+app.use((req, res, next) => isMcpPath(req) ? next() : sanitize(req, res, next));
 
 // Widget routes are public and CORS * — the whole point is running on customer sites.
 const widgetCors = cors({ origin: "*" });

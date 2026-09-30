@@ -13,6 +13,23 @@ const hash = value => crypto.createHash("sha256").update(value).digest("hex");
 const publicToken = row => ({ tokenId: row.tokenId, name: row.name, preview: row.preview,
     createdAt: row.createdAt, expiresAt: row.expiresAt, revokedAt: row.revokedAt, lastUsedAt: row.lastUsedAt });
 const js = value => JSON.stringify(value).replace(/</g, "\\u003c");
+const slotConflict = error => error.code === 11000 && error.keyPattern?.activeSlot;
+
+async function reserveLegacySlots(orgId, now) {
+    await InstallToken.updateMany({ orgId, activeSlot: { $exists: true },
+        $or: [{ revokedAt: { $ne: null } }, { expiresAt: { $lte: now } }] }, { $unset: { activeSlot: "" } });
+    // Credentials issued before slot enforcement remain usable. Adopt them
+    // before inserting a new credential, using the same uniqueness constraint.
+    const legacy = await InstallToken.find({ orgId, activeSlot: { $exists: false }, revokedAt: null, expiresAt: { $gt: now } }).select("_id").lean();
+    for (const row of legacy) {
+        for (let slot = 0; slot < 20; slot++) {
+            try {
+                await InstallToken.updateOne({ _id: row._id, activeSlot: { $exists: false }, revokedAt: null, expiresAt: { $gt: now } }, { $set: { activeSlot: slot } });
+                break;
+            } catch (error) { if (!slotConflict(error)) throw error; }
+        }
+    }
+}
 
 async function createToken({ orgId, email, name }) {
     if (typeof name !== "string" || !name.trim() || name.trim().length > 80) {
@@ -22,10 +39,17 @@ async function createToken({ orgId, email, name }) {
     if (!account) return { status: 403, json: { success: false, error: "Verify your account before creating an installation token" } };
     const active = await InstallToken.countDocuments({ orgId, revokedAt: null, expiresAt: { $gt: new Date() } });
     if (active >= 20) return { status: 409, json: { success: false, error: "Revoke an existing token before creating another" } };
+    await reserveLegacySlots(orgId, new Date());
     const token = `zi_${crypto.randomBytes(32).toString("hex")}`;
-    const row = await InstallToken.create({ orgId, accountId: account.accountId, sessionVersion: account.sessionVersion || 0,
+    const attributes = { orgId, accountId: account.accountId, sessionVersion: account.sessionVersion || 0,
         name: name.trim(), tokenId: `install_${crypto.randomUUID()}`, tokenHash: hash(token), preview: `${token.slice(0, 10)}…`,
-        expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60_000) });
+        expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60_000) };
+    let row;
+    for (let slot = 0; slot < 20; slot++) {
+        try { row = await InstallToken.create({ ...attributes, activeSlot: slot }); break; }
+        catch (error) { if (!slotConflict(error)) throw error; }
+    }
+    if (!row) return { status: 409, json: { success: false, error: "Revoke an existing token before creating another" } };
     await audit.record({ orgId, action: AuditAction.MCP_TOKEN_CREATED, actorEmail: email, targetType: "install-token", targetId: row.tokenId });
     return { status: 201, json: { success: true, data: { ...publicToken(row), token } } };
 }
@@ -35,7 +59,7 @@ async function listTokens(orgId) {
 }
 
 async function revokeToken({ orgId, tokenId, email }) {
-    const row = await InstallToken.findOneAndUpdate({ orgId, tokenId }, { $set: { revokedAt: new Date() } });
+    const row = await InstallToken.findOneAndUpdate({ orgId, tokenId }, { $set: { revokedAt: new Date() }, $unset: { activeSlot: "" } });
     if (!row) return { status: 404, json: { success: false, error: "Token not found" } };
     await audit.record({ orgId, action: AuditAction.MCP_TOKEN_REVOKED, actorEmail: email, targetType: "install-token", targetId: tokenId });
     return { status: 200, json: { success: true } };
