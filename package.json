@@ -17,6 +17,8 @@
         "widget:sync": "node scripts/syncWidget.js"
     },
     "dependencies": {
+        "@modelcontextprotocol/node": "^2.1.0",
+        "@modelcontextprotocol/server": "^2.2.0",
         "cookie-parser": "^1.4.7",
         "cors": "^2.8.5",
         "dotenv": "^16.4.5",
@@ -27,9 +29,11 @@
         "newrelic": "^14.3.7",
         "node-cron": "^4.6.0",
         "proxy-addr": "^2.0.8",
-        "ws": "^8.21.3"
+        "ws": "^8.21.3",
+        "zod": "^4.6.5"
     },
     "devDependencies": {
+        "@modelcontextprotocol/client": "^2.2.0",
         "playwright": "^1.63.0"
     }
 }

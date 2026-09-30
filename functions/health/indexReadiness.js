@@ -20,6 +20,7 @@ const generalFunctions = require("../utilFunctions/generalFunctions");
 // exactly the constraints something depends on.
 
 const CRITICAL_MODELS = [
+    { path: "../../models/security/installToken", why: "MCP installation token uniqueness" },
     { path: "../../models/security/rateBucket", why: "shared rate-limit counters" },
     { path: "../../models/action/actionExecution", why: "action execution idempotency" },
     // Webhook idempotency — the same provider event must never double-apply.

@@ -327,3 +327,38 @@ keys never repeat the network call. An uncertain or interrupted write is
 escalated for human investigation, without automatic retry. The model receives
 the latest 50 history messages; widget reloads receive the latest 100. Human
 handoff suppresses AI replies, including a takeover during generation.
+
+## MCP installation server
+
+`/mcp` is an authenticated Streamable HTTP endpoint built with the official MCP
+SDK. It supports 2026-07-28 clients and stateless legacy 2025 initialization.
+Three read-only tools expose the token's workspace installation config,
+framework-specific code, and a bounded public-page source check:
+`zealoop_get_install_config`, `zealoop_get_install_instructions`, and
+`zealoop_verify_installation`. The coding agent edits the customer's repository
+or CMS using its existing permissions. These tools do not publish a site.
+
+Owners/admins manage credentials at `/api/org/:orgId/mcp/tokens` (GET/POST)
+and `/api/org/:orgId/mcp/tokens/:tokenId` (DELETE). Plaintext credentials are
+shown once, SHA-256 hashes are stored, and tokens expire in 30 days. Every MCP
+request checks the issuer's verified account/session version and current
+workspace role, plus revocation/expiry and shared MongoDB request budgets.
+Sign-out and password reset invalidate issued installation credentials.
+Tokens cannot access REST API data or widget signing secrets. Creation and
+revocation are audited. There is no OAuth flow in this initial integration;
+clients must support a configured bearer header.
+
+`API_URL` must match the public MCP Host header. Browser origins must match
+`API_URL` or `CORS_DASHBOARD_ORIGINS`; command-line clients omit Origin. The
+endpoint is readiness-gated and uses strict SDK tool schemas, rather than the
+Mongo operator middleware that rejects MCP's namespaced metadata keys.
+
+Installation instructions use the hosted loader because the npm SDK is not
+published. Verification rejects redirects (use the canonical page URL), private
+network targets and URLs with credentials. It fetches at most 1 MB within 10
+seconds and returns only source-detection booleans, not remote HTML or its
+instructions. Source presence and reported runtime telemetry do not prove JS
+execution; check the deployed launcher and CSP errors in a browser.
+
+Client configuration: <https://www.zealoop.com/docs/mcp>. Regression coverage:
+`npm test -- tests/mcp.test.js`; the full `npm test` includes these tests.

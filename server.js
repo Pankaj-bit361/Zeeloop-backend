@@ -41,6 +41,7 @@ const opsRoutes = require("./routes/opsRoutes");
 const expansionRoutes = require("./routes/expansionRoutes");
 const onboardingRoutes = require("./routes/onboardingRoutes");
 const publicApiRoutes = require("./routes/publicApiRoutes");
+const mcpRoutes = require("./routes/mcpRoutes");
 const inboundEmailRoutes = require("./routes/inboundEmailRoutes");
 const attributionFunctions = require("./functions/analytics/attributionFunctions");
 const subscriptionFunctions = require("./functions/billing/subscriptionFunctions");
@@ -93,7 +94,9 @@ app.use(cookieParser());
    Webhook signature verification is unaffected: it reads req.rawBody, captured
    by the express.json verify hook above, so a rejected body is rejected before
    it matters and a legitimate one still verifies against the original bytes. */
-app.use(sanitize);
+// MCP metadata uses namespaced dotted keys. Its SDK validates the JSON-RPC
+// envelope and every tool's strict schema; no body object reaches MongoDB.
+app.use((req, res, next) => /^\/mcp\/?$/.test(req.path) ? next() : sanitize(req, res, next));
 
 // Widget routes are public and CORS * — the whole point is running on customer sites.
 const widgetCors = cors({ origin: "*" });
@@ -118,7 +121,7 @@ app.get("/ready", (req, res) => {
 // Readiness also gates writes when a load balancer still routes to a booting
 // instance. The uniqueness constraints must exist before accepting traffic.
 app.use((req, res, next) => {
-    if (/^\/(api|v1|webhooks|inbound|auth)(\/|$)/.test(req.path) && (!indexesReady || mongoose.connection.readyState !== 1)) {
+    if (/^\/(api|v1|mcp|webhooks|inbound|auth)(\/|$)/.test(req.path) && (!indexesReady || mongoose.connection.readyState !== 1)) {
         res.setHeader("Retry-After", "5");
         return res.status(503).json({ success: false, error: "Service is starting. Please retry shortly." });
     }
@@ -426,6 +429,8 @@ app.use("/api/org", dashboardCors, widgetConfigRoutes);
 app.use("/api/org", dashboardCors, opsRoutes);
 app.use("/api/org", dashboardCors, expansionRoutes);
 app.use("/api/org", dashboardCors, onboardingRoutes);
+app.use("/api/org", dashboardCors, mcpRoutes.management);
+app.use("/mcp", mcpRoutes.endpoint);
 app.use("/api/analytics", dashboardCors, analyticsRoutes);
 
 // §5.6 — the customer-facing REST API. Deliberately NOT under /api/org: it is
