@@ -99,6 +99,7 @@ const conversationSchema = new mongoose.Schema(
 conversationSchema.index({ orgId: 1, status: 1, lastMessageAt: -1 });
 // §3.7 — the filtered inbox reads by channel and by attribute value.
 conversationSchema.index({ orgId: 1, channel: 1, lastMessageAt: -1 });
+conversationSchema.index({ orgId: 1, endUserId: 1, channel: 1, lastMessageAt: -1 });
 conversationSchema.index({ orgId: 1, "attributes.attributeId": 1, "attributes.value": 1 });
 // Email threading looks a conversation up by the Message-IDs already seen on it.
 conversationSchema.index({ orgId: 1, "emailThread.messageIds": 1 });
