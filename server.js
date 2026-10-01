@@ -489,9 +489,18 @@ async function connectWithRetry() {
         const readiness = await indexReadiness.ensureCriticalIndexes();
         if (!readiness.success) throw new Error("Critical uniqueness constraints are not ready");
         indexesReady = true;
-        // Loud, not fatal. Without the Atlas search indexes retrieval returns
-        // nothing and the agent abstains from every question — indistinguishable
-        // from an empty knowledge base unless someone says so at boot (§8.3).
+        // Fresh Atlas deployments need search indexes as well as normal Mongo
+        // indexes. Add missing ones; don't hold readiness while Atlas builds
+        // them. Keyword retrieval remains available throughout.
+        if (process.env.NODE_ENV !== "test") {
+            try {
+                const { ensureSearchIndexes } = require("./config/searchIndexes");
+                const { created } = await ensureSearchIndexes(mongoose.connection.db.collection("chunks"));
+                if (created.length) console.log("Server: creating search indexes:", created.join(", "));
+            } catch (error) {
+                console.warn("Server: search index setup unavailable; keyword retrieval active:", error.message);
+            }
+        }
         await healthFunctions.assertSearchIndexes();
     } catch (error) {
         console.error("Server: MongoDB connection failed, retrying in 5s");

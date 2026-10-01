@@ -31,6 +31,7 @@ const securityFunctions = require("../security/securityFunctions");
 const expansionFunctions = require("../expansion/expansionFunctions");
 const widgetConfigFunctions = require("../widget/widgetConfigFunctions");
 const responseComponentFunctions = require("../widget/responseComponentFunctions");
+const searchFunctions = require("../knowledge/searchFunctions");
 
 // Shown to end users on a workspace that has hit its conversation quota or cost
 // ceiling. Deliberately says nothing about billing: the visitor is the
@@ -746,17 +747,11 @@ class ChatFunctions {
 
             // search across headings and body text
             if (query && String(query).trim()) {
-                const escaped = String(query).trim().replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-                const regex = new RegExp(escaped, "i");
-                const hits = await Chunk.find({
-                    orgId: org.orgId,
-                    sourceId: { $in: readyIds },
-                    $or: [{ headingPath: regex }, { text: regex }],
-                })
-                    .select("chunkId headingPath text sourceId")
-                    .limit(8)
-                    .lean();
-                return { status: 200, json: { success: true, data: { hits: hits.map(toHit) } } };
+                // Same heading-aware text retrieval as the agent, without a
+                // paid embedding/model call for the widget's quick Help search.
+                const hits = await searchFunctions.textSearch({ orgId: org.orgId, query: String(query).trim(), sourceIds: readyIds });
+                const published = new Set(readyIds);
+                return { status: 200, json: { success: true, data: { hits: hits.filter((hit) => published.has(hit.sourceId)).slice(0, 8).map(toHit) } } };
             }
 
             // articles of one collection
