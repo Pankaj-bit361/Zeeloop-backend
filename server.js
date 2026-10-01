@@ -42,6 +42,7 @@ const expansionRoutes = require("./routes/expansionRoutes");
 const onboardingRoutes = require("./routes/onboardingRoutes");
 const publicApiRoutes = require("./routes/publicApiRoutes");
 const mcpRoutes = require("./routes/mcpRoutes");
+const mcpOAuthRoutes = require("./routes/mcpOAuthRoutes");
 const inboundEmailRoutes = require("./routes/inboundEmailRoutes");
 const attributionFunctions = require("./functions/analytics/attributionFunctions");
 const subscriptionFunctions = require("./functions/billing/subscriptionFunctions");
@@ -84,12 +85,20 @@ const jsonBody = express.json({
     },
 });
 const isMcpPath = req => /^\/mcp\/?$/i.test(req.path);
+const isMcpOAuthPath = req => /^\/oauth\/mcp(\/|$)/i.test(req.path);
 // The SDK's Node adapter receives req.body, so its stream-size limit cannot
 // bound JSON already parsed by Express. Enforce the smaller MCP limit here,
 // including whitespace and decoded compressed bodies.
 const mcpJsonBody = express.json({ limit: 65_536 });
-app.use((req, res, next) => (isMcpPath(req) ? mcpJsonBody : jsonBody)(req, res, next));
+const oauthJsonBody = express.json({ limit: 16_384 });
+app.use((req, res, next) => (isMcpPath(req) ? mcpJsonBody : isMcpOAuthPath(req) ? oauthJsonBody : jsonBody)(req, res, next));
+const oauthFormBody = express.urlencoded({ extended: false, limit: 16_384 });
+app.use((req, res, next) => isMcpOAuthPath(req) ? oauthFormBody(req, res, next) : next());
 app.use((error, req, res, next) => {
+    if (isMcpOAuthPath(req) && [400, 413, 415].includes(error.status)) {
+        res.setHeader("Cache-Control", "private, no-store");
+        return res.status(error.status).json({ error: "invalid_request", error_description: error.status === 413 ? "OAuth request exceeds the 16 KiB limit" : "Invalid OAuth request body" });
+    }
     if (!isMcpPath(req) || ![400, 413, 415].includes(error.status)) return next(error);
     res.setHeader("Cache-Control", "private, no-store");
     const message = error.status === 413 ? "MCP request exceeds the 64 KiB limit"
@@ -133,7 +142,7 @@ app.get("/ready", (req, res) => {
 // Readiness also gates writes when a load balancer still routes to a booting
 // instance. The uniqueness constraints must exist before accepting traffic.
 app.use((req, res, next) => {
-    if (/^\/(api|v1|mcp|webhooks|inbound|auth)(\/|$)/.test(req.path) && (!indexesReady || mongoose.connection.readyState !== 1)) {
+    if (/^\/(api|v1|mcp|oauth|webhooks|inbound|auth)(\/|$)/.test(req.path) && (!indexesReady || mongoose.connection.readyState !== 1)) {
         res.setHeader("Retry-After", "5");
         return res.status(503).json({ success: false, error: "Service is starting. Please retry shortly." });
     }
@@ -442,6 +451,9 @@ app.use("/api/org", dashboardCors, opsRoutes);
 app.use("/api/org", dashboardCors, expansionRoutes);
 app.use("/api/org", dashboardCors, onboardingRoutes);
 app.use("/api/org", dashboardCors, mcpRoutes.management);
+app.use("/api/org", dashboardCors, mcpOAuthRoutes.management);
+app.use("/api/auth", dashboardCors, mcpOAuthRoutes.session);
+app.use(mcpOAuthRoutes.publicRoutes);
 app.use("/mcp", mcpRoutes.endpoint);
 app.use("/api/analytics", dashboardCors, analyticsRoutes);
 

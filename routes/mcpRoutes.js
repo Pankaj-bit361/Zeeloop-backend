@@ -11,6 +11,7 @@ const { MemberStatus } = require("../config/enums");
 const { reqOrgOwnerAuth, requireRole, OWNER_OR_ADMIN } = require("../middlewares/auth");
 const { consumeShared, clientIp } = require("../middlewares/rateLimit");
 const install = require("../functions/mcp/installFunctions");
+const oauth = require("../functions/mcp/oauthFunctions");
 
 const management = express.Router();
 management.use("/:orgId/mcp/tokens", (req, res, next) => {
@@ -36,14 +37,22 @@ endpoint.use(async (req, res, next) => {
         }
         const ip = await consumeShared(`mcp:ip:${clientIp(req)}`, 120, 60_000);
         if (!ip.allowed) { res.setHeader("Retry-After", String(ip.retryAfterSeconds)); return res.status(429).json({ error: "Too many MCP requests" }); }
+        const bearer = (req.get("authorization") || "").match(/^Bearer (\S+)$/)?.[1];
+        const connection = bearer?.startsWith("zo_") ? await oauth.resolveAccess(bearer) : null;
+        if (connection) {
+            const limit = await consumeShared(`mcp:token:${connection.tokenId}`, 60, 60_000);
+            if (!limit.allowed) { res.setHeader("Retry-After", String(limit.retryAfterSeconds)); return res.status(429).json({ error: "MCP connection request limit reached" }); }
+            req.installOrgId = connection.orgId;
+            return next();
+        }
         const token = (req.get("authorization") || "").match(/^Bearer (zi_[0-9a-f]{64})$/)?.[1];
         const row = token ? await InstallToken.findOne({ tokenHash: install.hash(token), revokedAt: null, expiresAt: { $gt: new Date() } }).lean() : null;
         const account = row ? await Account.findOne({ accountId: row.accountId }).select("email emailVerifiedAt sessionVersion").lean() : null;
         const member = account ? await Member.findOne({ orgId: row.orgId, email: account.email, status: MemberStatus.ACTIVE }).select("role").lean() : null;
         if (!row || !account?.emailVerifiedAt || (account.sessionVersion || 0) !== row.sessionVersion || !member || !OWNER_OR_ADMIN.includes(member.role)
             || !(await Org.exists({ orgId: row.orgId }))) {
-            res.setHeader("WWW-Authenticate", 'Bearer realm="Zealoop installation", error="invalid_token"');
-            return res.status(401).json({ error: "Create a valid installation token in the Zealoop dashboard" });
+            res.setHeader("WWW-Authenticate", `${oauth.CHALLENGE}, error="invalid_token"`);
+            return res.status(401).json({ error: "Connect by signing in to Zealoop, or use a valid installation token" });
         }
         const limit = await consumeShared(`mcp:token:${row.tokenId}`, 60, 60_000);
         if (!limit.allowed) { res.setHeader("Retry-After", String(limit.retryAfterSeconds)); return res.status(429).json({ error: "Installation token request limit reached" }); }
