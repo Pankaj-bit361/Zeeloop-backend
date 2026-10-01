@@ -11,6 +11,7 @@ import Action from "../../models/action/action.js";
 import ActionExecution from "../../models/action/actionExecution.js";
 import EndUser from "../../models/user/endUser.js";
 import client from "../helpers/client.js";
+import { checkConversationMotion } from "./widgetMotion.mjs";
 
 const { BASE_URL: base, devLogin, post, authHeader } = client;
 if (process.env.NODE_ENV !== "test" || !/^mongodb:\/\/(localhost|127\.0\.0\.1):\d+\/zealoop_test_/.test(process.env.TEST_MONGODB_URI || "")) {
@@ -148,6 +149,7 @@ async function checkHistory() {
 
 try {
   await checkHistory();
+  await checkConversationMotion(browser, base, publicKey);
   await page.goto(`${base}/widget/demo?conv=fresh`);
   await page.getByRole("button", { name: "Chat with Zea", exact: true }).click();
   const sent = page.waitForResponse(response => response.url().endsWith("/api/widget/messages") && response.request().method() === "POST");
