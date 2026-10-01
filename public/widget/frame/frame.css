@@ -192,7 +192,7 @@ button { font: inherit; border: none; background: none; cursor: pointer; color: 
 .thread {
   flex: 1; overflow-y: auto; overscroll-behavior: contain;
   padding: 18px 16px 8px;
-  scroll-behavior: smooth;
+  overflow-anchor: none;
 }
 @media (prefers-reduced-motion: reduce) { .thread { scroll-behavior: auto; } }
 
@@ -227,6 +227,21 @@ button { font: inherit; border: none; background: none; cursor: pointer; color: 
 .day-divider::before, .day-divider::after { content: ""; flex: 1; height: 1px; background: var(--hairline-soft); }
 
 .group { display: flex; flex-direction: column; gap: 3px; margin-bottom: 14px; }
+.message { display: flex; flex-direction: column; gap: 3px; }
+.message-details:empty { display: none; }
+.history-ready { animation: history-reveal 0.16s ease-out; }
+@keyframes history-reveal { from { opacity: 0.4; } to { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .history-ready { animation: none; } }
+.msg-time[hidden] { display: none; }
+.thread-loading { display: flex; flex-direction: column; gap: 22px; padding-top: 10px; }
+.history-placeholder { display: flex; padding-left: 32px; }
+.history-placeholder.user { justify-content: flex-end; padding-left: 0; }
+.history-placeholder .sk-bubble { width: 72%; height: 62px; border-radius: var(--radius-bubble); }
+.history-placeholder.user .sk-bubble { width: 46%; height: 42px; }
+.history-placeholder:last-child .sk-bubble { width: 80%; height: 86px; }
+.thread-error { display: flex; flex-direction: column; align-items: center; gap: 16px; padding: 44px 16px; text-align: center; color: var(--body); }
+.history-notice { margin: 12px 0; color: var(--muted); font-size: 12px; text-align: center; }
+.history-notice button { color: var(--mint-ink); text-decoration: underline; }
 .row { display: flex; align-items: flex-end; gap: 8px; }
 .row.user { justify-content: flex-end; }
 .row .avatar-slot { width: 24px; flex-shrink: 0; }
@@ -239,10 +254,10 @@ button { font: inherit; border: none; background: none; cursor: pointer; color: 
   white-space: pre-wrap;
   overflow-wrap: break-word;
   word-break: break-word;
-  animation: bubble-in 0.25s cubic-bezier(0.22, 1, 0.36, 1);
+  animation: bubble-in 0.18s cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 @media (prefers-reduced-motion: reduce) { .bubble { animation: none; } }
-@keyframes bubble-in { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+@keyframes bubble-in { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
 
 .bubble.assistant, .bubble.human {
   background: var(--card);
@@ -353,7 +368,7 @@ button { font: inherit; border: none; background: none; cursor: pointer; color: 
 }
 .typing i:nth-child(2) { animation-delay: 0.15s; }
 .typing i:nth-child(3) { animation-delay: 0.3s; }
-@keyframes typing-b { 0%, 60%, 100% { transform: none; opacity: 0.45; } 30% { transform: translateY(-4px); opacity: 1; } }
+@keyframes typing-b { 0%, 60%, 100% { transform: none; opacity: 0.45; } 30% { transform: translateY(-2px); opacity: 1; } }
 @media (prefers-reduced-motion: reduce) { .typing i { animation: none; } }
 
 /* ── confirmation card ─────────────────────────────────────── */
@@ -440,11 +455,11 @@ button { font: inherit; border: none; background: none; cursor: pointer; color: 
   padding: 7px 7px 7px 15px;
   transition: border-color 0.15s, box-shadow 0.15s;
 }
-.composer:focus-within { border-color: #d6d3d1; box-shadow: 0 1px 6px rgba(12, 10, 9, 0.05); }
+.composer:focus-within { border-color: var(--mint-bar); box-shadow: 0 2px 12px rgba(12, 10, 9, 0.06); }
 .composer textarea {
   flex: 1; border: none; outline: none; resize: none; background: none;
   font: inherit; font-size: 13.8px; line-height: 1.45; color: var(--ink-soft);
-  max-height: 108px; padding: 3px 0;
+  min-height: 26px; max-height: 108px; padding: 3px 0;
 }
 .composer textarea::placeholder { color: var(--muted); }
 .send {
@@ -454,10 +469,9 @@ button { font: inherit; border: none; background: none; cursor: pointer; color: 
   transition: opacity 0.15s, transform 0.15s;
   opacity: 0.35;
 }
-.send.ready { opacity: 1; animation: send-pop 0.2s cubic-bezier(0.34, 1.56, 0.64, 1); }
-.send.ready:hover { transform: scale(1.07); }
-.send.ready:active { transform: scale(0.9); }
-@keyframes send-pop { from { transform: scale(0.82); } to { transform: scale(1); } }
+.send.ready { opacity: 1; }
+.send.ready:hover { transform: scale(1.04); }
+.send.ready:active { transform: scale(0.96); }
 @media (prefers-reduced-motion: reduce) { .send.ready { animation: none; } }
 .send:focus-visible { outline: 2px solid var(--mint-bar); outline-offset: 2px; }
 .char-warn { display: none; font-size: 11px; color: var(--amber); text-align: right; padding: 3px 8px 0; }
@@ -478,10 +492,10 @@ button { font: inherit; border: none; background: none; cursor: pointer; color: 
 .page, .chat { flex: 1; min-height: 0; display: flex; flex-direction: column; }
 
 /* navigation feel: entering views glide in like a pushed screen */
-@keyframes view-forward { from { opacity: 0; transform: translateX(26px); } to { opacity: 1; transform: none; } }
-@keyframes view-back { from { opacity: 0; transform: translateX(-26px); } to { opacity: 1; transform: none; } }
-.anim-forward { animation: view-forward 0.26s cubic-bezier(0.22, 1, 0.36, 1); }
-.anim-back { animation: view-back 0.26s cubic-bezier(0.22, 1, 0.36, 1); }
+@keyframes view-forward { from { opacity: 0; transform: translateX(10px); } to { opacity: 1; transform: none; } }
+@keyframes view-back { from { opacity: 0; transform: translateX(-10px); } to { opacity: 1; transform: none; } }
+.anim-forward { animation: view-forward 0.18s cubic-bezier(0.2, 0.8, 0.2, 1); }
+.anim-back { animation: view-back 0.18s cubic-bezier(0.2, 0.8, 0.2, 1); }
 @media (prefers-reduced-motion: reduce) { .anim-forward, .anim-back { animation: none; } }
 
 .tabbar {
@@ -844,9 +858,6 @@ button { font: inherit; border: none; background: none; cursor: pointer; color: 
   min-height: var(--zl-tap-target); display: inline-flex; align-items: center;
 }
 
-/* Room beneath the newest question so it can travel to the top of the
-   viewport even in a short thread. Sized by applyPin(); 0 when unpinned. */
-.thread-spacer { height: 0; flex: none; }
 
 /* Custom home background — a workspace's own solid colour or gradient, set as
    --hero-bg by applyTheme. The value is validated as #rrggbb in the frame

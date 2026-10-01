@@ -37,9 +37,9 @@
       border-radius: 16px; overflow: hidden; background: #fff;
       box-shadow: 0 12px 56px rgba(12,10,9,0.24), 0 2px 12px rgba(12,10,9,0.12);
       z-index: ${n.zIndex||2147483e3};
-      opacity: 0; transform: translateY(14px) scale(.97);
+      opacity: 0; transform: translateY(8px) scale(.99);
       transform-origin: bottom ${u?"left":"right"};
-      transition: opacity .2s cubic-bezier(.22,1,.36,1), transform .3s cubic-bezier(.3,1.36,.6,1), visibility .2s;
+      transition: opacity .18s ease, transform .22s cubic-bezier(.2,.8,.2,1), visibility .18s;
       pointer-events: none; visibility: hidden;
     }
     .panel.open { opacity: 1; transform: translateY(0) scale(1); pointer-events: auto; visibility: visible; }
