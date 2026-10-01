@@ -74,7 +74,7 @@ class ConfigFunctions {
        So approval switches on with the second seat. Everything else about the
        model is unchanged, including version history: the objects are identical,
        only the state they start in differs. */
-    async create({ orgId, objectType, body, actorEmail }) {
+    async create({ orgId, objectType, body, actorEmail, draftOnly = false }) {
         console.log("ConfigFunctions:create: orgId:", orgId, "type:", objectType);
         try {
             const entry = getEntry(objectType);
@@ -91,7 +91,7 @@ class ConfigFunctions {
                 [entry.idField]: objectId,
                 ...this._pick(body, entry.fields),
                 ...this._pickShared(body),
-                publishState: approval.required ? PublishState.DRAFT : PublishState.LIVE,
+                publishState: draftOnly || approval.required ? PublishState.DRAFT : PublishState.LIVE,
                 /* `enabled` defaults to false, which on a solo workspace would
                    move the trap rather than remove it: the rule is LIVE, still
                    does nothing, and now the missing step is an On switch
@@ -100,7 +100,7 @@ class ConfigFunctions {
                    With a team it stays false, because a rule that switched
                    itself on the moment a colleague published it would be the
                    opposite surprise. */
-                enabled: approval.required ? false : true,
+                enabled: draftOnly || approval.required ? false : true,
                 version: 1,
                 updatedBy: actorEmail || null,
             });
@@ -112,7 +112,7 @@ class ConfigFunctions {
                     data: this._strip(document.toJSON()),
                     // Told rather than inferred, so the dashboard does not have
                     // to guess why there is no Publish button.
-                    requiresApproval: approval.required,
+                    requiresApproval: draftOnly || approval.required,
                 },
             };
         } catch (error) {
@@ -123,7 +123,7 @@ class ConfigFunctions {
         }
     }
 
-    async update({ orgId, objectType, objectId, body, actorEmail }) {
+    async update({ orgId, objectType, objectId, body, actorEmail, draftOnly = false }) {
         console.log("ConfigFunctions:update: orgId:", orgId, "objectId:", objectId);
         try {
             const entry = getEntry(objectType);
@@ -148,7 +148,8 @@ class ConfigFunctions {
             // step, and there is no review without a reviewer.
             const approval = await revealFunctions.requiresApproval({ orgId });
             const wasLive = existing.publishState === PublishState.LIVE;
-            if (wasLive && approval.required) existing.publishState = PublishState.DRAFT;
+            if (draftOnly || (wasLive && approval.required)) existing.publishState = PublishState.DRAFT;
+            if (draftOnly) existing.enabled = false;
             await existing.save();
 
             return {
@@ -231,7 +232,7 @@ class ConfigFunctions {
         }
     }
 
-    async remove({ orgId, objectType, objectId, actorEmail }) {
+    async remove({ orgId, objectType, objectId, actorEmail, draftOnly = false }) {
         console.log("ConfigFunctions:remove: orgId:", orgId, "objectId:", objectId);
         try {
             const entry = getEntry(objectType);
@@ -250,7 +251,8 @@ class ConfigFunctions {
             // Snapshot before deleting: the version log is the only way back,
             // and a delete is exactly when someone wants one.
             await this._snapshot({ orgId, objectType, objectId, document, actorEmail, note: "deleted" });
-            await entry.Model.deleteOne({ orgId, [entry.idField]: objectId });
+            const deleted = await entry.Model.deleteOne({ orgId, [entry.idField]: objectId, ...(draftOnly ? { publishState: { $ne: PublishState.LIVE }, isBuiltIn: { $ne: true } } : {}) });
+            if (!deleted.deletedCount) return { status: 409, json: { success: false, error: "The resource changed or was published; pause it and retry cleanup" } };
 
             return { status: 200, json: { success: true, data: { deleted: objectId } } };
         } catch (error) {

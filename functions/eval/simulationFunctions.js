@@ -290,7 +290,7 @@ class SimulationFunctions {
             if (!org) return { status: 404, json: { success: false, error: "Org not found" } };
 
             const runTarget = target === ConfigTarget.DRAFT ? ConfigTarget.DRAFT : ConfigTarget.LIVE;
-            // The target flip wraps the whole suite rather than each simulation,
+            // The target context wraps the whole suite rather than each simulation,
             // so the config is promoted once instead of once per test.
             const results = await evalRunner.withTarget({
                 orgId,

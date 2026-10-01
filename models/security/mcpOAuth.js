@@ -15,6 +15,7 @@ const request = new mongoose.Schema({
     clientId: { type: String, required: true }, clientName: { type: String, required: true },
     redirectUri: { type: String, required: true }, codeChallenge: { type: String, required: true },
     resource: { type: String, required: true }, state: String,
+    scope: { type: String, default: "zealoop:install" },
     accountId: { type: String, default: null }, sessionVersion: Number,
     expiresAt: { type: Date, required: true }, consumedAt: { type: Date, default: null },
 }, { timestamps: true });
@@ -27,6 +28,8 @@ const grant = new mongoose.Schema({
     clientId: { type: String, required: true }, clientName: { type: String, required: true },
     orgId: { type: String, required: true, index: true }, accountId: { type: String, required: true },
     sessionVersion: { type: Number, required: true }, resource: { type: String, required: true },
+    scope: { type: String, default: "zealoop:install" },
+    accessScope: String,
     activeSlot: { type: Number, select: false },
     codeHash: { type: String, required: true, unique: true, select: false },
     codeChallenge: { type: String, required: true, select: false }, redirectUri: { type: String, required: true },

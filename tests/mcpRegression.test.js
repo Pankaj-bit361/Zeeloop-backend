@@ -61,7 +61,7 @@ before(async () => {
     await new Promise(resolve => server.listen(0, "127.0.0.1", resolve));
     site = `http://127.0.0.1:${server.address().port}`;
 });
-beforeEach(async () => { await RateBucket.deleteOne({ key: install.hash(`mcp:token:${credential.tokenId}`) }); });
+beforeEach(async () => { await RateBucket.deleteMany({ key: { $in: ["127.0.0.1", "::ffff:127.0.0.1", "::1"].map(ip => install.hash(`mcp:ip:${ip}`)) } }); await RateBucket.deleteOne({ key: install.hash(`mcp:token:${credential.tokenId}`) }); });
 after(async () => { server.closeAllConnections(); await new Promise(resolve => server.close(resolve)); await mongoose.disconnect(); });
 
 describe("MCP protocol and credential regression", () => {

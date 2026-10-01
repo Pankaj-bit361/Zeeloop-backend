@@ -9,9 +9,11 @@ const {
     IdPrefix,
     ActionKind,
     CredentialType,
+    PublishState,
     DataInputSource,
 } = require("../../config/enums");
 const generalFunctions = require("../utilFunctions/generalFunctions");
+const evalContext = require("../eval/evalContext");
 
 class ActionFunctions {
     async listActions({ orgId }) {
@@ -75,7 +77,7 @@ class ActionFunctions {
         }
     }
 
-    async updateAction({ orgId, actionId, name, description, accessType, method, urlTemplate, params, headers, secret, enabled, requiresIdentity, requiresConfirmation }) {
+    async updateAction({ orgId, actionId, name, description, accessType, method, urlTemplate, params, headers, secret, enabled, requiresIdentity, requiresConfirmation, mcpActivation = false, expectedUpdatedAt }) {
         console.log("ActionFunctions:updateAction: orgId:", orgId, "actionId:", actionId);
         try {
             if (!orgId || !actionId) {
@@ -96,8 +98,9 @@ class ActionFunctions {
                 return { status: 400, json: { success: false, error: "Unsupported HTTP method" } };
             }
             const action = await Action.findOneAndUpdate(
-                { orgId, actionId },
+                { orgId, actionId, ...(mcpActivation ? { lastTestStatus: TestStatus.PASS, lastTestMocked: false, mockEnabled: { $ne: true }, updatedAt: expectedUpdatedAt } : {}) },
                 {
+                    ...(mcpActivation && { publishState: PublishState.LIVE }),
                     ...(name !== undefined && { name }),
                     ...(description !== undefined && { description }),
                     ...(accessType !== undefined && { accessType }),
@@ -109,13 +112,13 @@ class ActionFunctions {
                     ...(enabled !== undefined && { enabled }),
                     ...(requiresIdentity !== undefined && { requiresIdentity }),
                     ...(requiresConfirmation !== undefined && { requiresConfirmation }),
-                    ...(resetsTest && { lastTestStatus: null, lastTestedAt: null }),
+                    ...(resetsTest && { lastTestStatus: null, lastTestedAt: null, lastTestMocked: null }),
                 },
                 { new: true }
             );
 
             if (!action) {
-                return { status: 404, json: { success: false, error: "Action not found" } };
+                return { status: mcpActivation ? 409 : 404, json: { success: false, error: mcpActivation ? "The action changed or needs a fresh non-mock test before activation" : "Action not found" } };
             }
             return { status: 200, json: { success: true, data: action } };
         } catch (error) {
@@ -126,13 +129,13 @@ class ActionFunctions {
         }
     }
 
-    async deleteAction({ orgId, actionId }) {
+    async deleteAction({ orgId, actionId, inactiveOnly = false }) {
         console.log("ActionFunctions:deleteAction: orgId:", orgId, "actionId:", actionId);
         try {
             if (!orgId || !actionId) {
                 return { status: 400, json: { success: false, error: "Invalid request. Please pass orgId and actionId" } };
             }
-            const action = await Action.findOneAndDelete({ orgId, actionId });
+            const action = await Action.findOneAndDelete({ orgId, actionId, ...(inactiveOnly ? { enabled: { $ne: true } } : {}) });
             if (!action) {
                 return { status: 404, json: { success: false, error: "Action not found" } };
             }
@@ -161,6 +164,7 @@ class ActionFunctions {
             const passed = callResult.success && callResult.httpStatus >= 200 && callResult.httpStatus < 300;
 
             action.lastTestStatus = passed ? TestStatus.PASS : TestStatus.FAIL;
+            action.lastTestMocked = callResult.mocked === true;
             action.lastTestedAt = new Date();
             await action.save();
 
@@ -276,6 +280,11 @@ class ActionFunctions {
                 durationMs: Date.now() - start,
                 mocked: true,
             };
+        }
+
+        if (evalContext.blocksExternalActions(action.orgId)) {
+            return { success: false, httpStatus: null, body: null, durationMs: 0,
+                error: "External actions are disabled during MCP evaluation. Configure a mock response to test this action." };
         }
 
         // §5.2 — MCP actions call a tool on the customer's own MCP server.

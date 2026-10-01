@@ -72,7 +72,7 @@ describe("MCP installation integration", () => {
     test("legacy initialization and tools/call work without process-local sessions", async () => {
         const initialized = await rpc("initialize", { protocolVersion: "2025-11-25", capabilities: {}, clientInfo: { name: "legacy-test", version: "1" } });
         assert.equal(initialized.status, 200);
-        assert.equal(initialized.json.result.serverInfo.name, "zealoop-installation");
+        assert.equal(initialized.json.result.serverInfo.name, "zealoop");
         const result = await rpc("tools/call", { name: "zealoop_get_install_config", arguments: {} });
         assert.equal(result.status, 200);
         assert.equal(result.json.result.structuredContent.orgId, workspace.orgId);

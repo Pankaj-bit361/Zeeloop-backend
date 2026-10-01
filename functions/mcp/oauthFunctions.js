@@ -8,12 +8,13 @@ const Org = require("../../models/org/org");
 const { MemberStatus } = require("../../config/enums");
 const { OWNER_OR_ADMIN } = require("../../middlewares/auth");
 const { outboundRequest } = require("../utilFunctions/outboundRequest");
+const { INSTALL, SCOPES, WORKSPACE, normalizeScope, isSubset } = require("./scopes");
 
 const ISSUER = config.API_URL.replace(/\/$/, "");
 const RESOURCE = `${ISSUER}/mcp`;
-const SCOPE = "zealoop:install";
+const SCOPE = INSTALL;
 const METADATA_URL = `${ISSUER}/.well-known/oauth-protected-resource/mcp`;
-const CHALLENGE = `Bearer realm="Zealoop MCP", resource_metadata="${METADATA_URL}", scope="${SCOPE}"`;
+const CHALLENGE = `Bearer realm="Zealoop MCP", resource_metadata="${METADATA_URL}", scope="${WORKSPACE}"`;
 const DAY = 86_400_000, HOUR = 3_600_000;
 const hash = value => crypto.createHash("sha256").update(value).digest("hex");
 const secret = prefix => prefix + crypto.randomBytes(32).toString("base64url");
@@ -49,8 +50,8 @@ function resource(value) {
     return RESOURCE;
 }
 function scope(value) {
-    if (value !== undefined && (typeof value !== "string" || value.trim().split(/\s+/).some(item => item !== SCOPE))) fail("invalid_scope", `Only ${SCOPE} is supported`);
-    return SCOPE;
+    try { return normalizeScope(value); }
+    catch (error) { fail("invalid_scope", error.message); }
 }
 function redirects(value) {
     if (!Array.isArray(value) || !value.length || value.length > 10 || !value.every(redirectAllowed)) fail("invalid_client_metadata", "Provide up to ten HTTPS or loopback redirect URLs without credentials or fragments");
@@ -121,11 +122,11 @@ async function startAuthorization(query) {
     // Never redirect errors until the registered callback has been checked.
     if (!client.redirectUris.some(uri => matchesRedirect(uri, redirectUri))) fail("invalid_request", "The callback does not match this client's registered redirect URL");
     if (query.response_type !== "code" || query.code_challenge_method !== "S256" || typeof query.code_challenge !== "string" || !/^[\w-]{43}$/.test(query.code_challenge)) fail("invalid_request", "Authorization requires code response type and S256 PKCE");
-    resource(query.resource); scope(query.scope);
+    resource(query.resource); const requestedScope = scope(query.scope);
     const state = string(query.state, "state", 2048, true);
     const requestId = secret("zr_");
     await McpRequest.create({ requestId, clientId: client.clientId, clientName: client.name, redirectUri, resource: RESOURCE,
-        codeChallenge: query.code_challenge, state, expiresAt: new Date(Date.now() + 10 * 60_000) });
+        codeChallenge: query.code_challenge, state, scope: requestedScope, expiresAt: new Date(Date.now() + 10 * 60_000) });
     return `${config.APP_URL.replace(/\/$/, "")}/mcp/authorize?request=${encodeURIComponent(requestId)}`;
 }
 async function eligibleOrgs(account, client) {
@@ -144,7 +145,7 @@ async function consentInfo(requestId, account) {
     if (!row) fail("invalid_request", "This connection request expired or was already used. Start again in your MCP client.");
     const client = await clientById(row.clientId);
     if (!client || !client.redirectUris.some(uri => matchesRedirect(uri, row.redirectUri))) fail("invalid_client", "This OAuth client is no longer available");
-    return { clientName: client.name, redirectHost: new URL(row.redirectUri).host, scope: SCOPE,
+    return { clientName: client.name, redirectHost: new URL(row.redirectUri).host, scope: row.scope || SCOPE,
         organizations: await eligibleOrgs(account, client), csrfToken: csrf(row, account), expiresAt: row.expiresAt };
 }
 function callback(row, params) {
@@ -171,7 +172,7 @@ async function decide(requestId, account, body) {
     await McpGrant.updateMany({ orgId: body.orgId, $or: [{ revokedAt: { $ne: null } }, { refreshExpiresAt: { $lte: now } }, { codeUsedAt: null, codeExpiresAt: { $lte: now } }] }, { $unset: { activeSlot: 1 } });
     try {
         await allocate(McpGrant, body.orgId, { grantId: secret("zg_"), clientId: row.clientId, clientName: row.clientName,
-            accountId: account.accountId, sessionVersion: account.sessionVersion || 0, resource: row.resource,
+            accountId: account.accountId, sessionVersion: account.sessionVersion || 0, resource: row.resource, scope: row.scope || SCOPE,
             codeHash: hash(code), codeChallenge: row.codeChallenge, redirectUri: row.redirectUri,
             codeExpiresAt: new Date(Date.now() + 5 * 60_000), refreshExpiresAt: new Date(Date.now() + 30 * DAY) });
     } catch (error) {
@@ -217,22 +218,27 @@ async function token(body) {
         filter = { grantId: row.grantId, refreshHash, revokedAt: null, refreshExpiresAt: { $gt: now } };
     } else fail("unsupported_grant_type", "Use authorization_code or refresh_token");
     if (!await validGrant(row)) fail("invalid_grant", "Workspace access has expired or been revoked");
+    const grantedScope = row.scope || SCOPE;
+    const accessScope = body.scope === undefined ? grantedScope : scope(body.scope);
+    if (!isSubset(accessScope, grantedScope)) fail("invalid_scope", "Reconnect and approve additional access before requesting more scopes");
     const access = secret("zo_"), refresh = secret("zf_");
     const expires = new Date(Math.min(Date.now() + HOUR, row.refreshExpiresAt.getTime()));
-    const update = { $set: { accessHash: hash(access), refreshHash: hash(refresh), accessExpiresAt: expires, codeUsedAt: row.codeUsedAt || now } };
+    const update = { $set: { accessHash: hash(access), refreshHash: hash(refresh), accessExpiresAt: expires, accessScope, codeUsedAt: row.codeUsedAt || now } };
     if (body.grant_type === "refresh_token") update.$push = { usedRefreshHashes: filter.refreshHash };
     if (!await McpGrant.findOneAndUpdate(filter, update)) {
         if (body.grant_type === "refresh_token") await McpGrant.updateOne({ grantId: row.grantId, usedRefreshHashes: filter.refreshHash }, { $set: { revokedAt: now }, $unset: { activeSlot: 1 } });
         fail("invalid_grant", "The credential was already used or revoked");
     }
-    return { access_token: access, token_type: "Bearer", expires_in: Math.max(0, Math.floor((expires.getTime() - Date.now()) / 1000)), refresh_token: refresh, scope: SCOPE };
+    return { access_token: access, token_type: "Bearer", expires_in: Math.max(0, Math.floor((expires.getTime() - Date.now()) / 1000)), refresh_token: refresh, scope: accessScope };
 }
 async function resolveAccess(access) {
     if (typeof access !== "string" || !/^zo_[\w-]{43}$/.test(access)) return null;
     const row = await McpGrant.findOne({ accessHash: hash(access), revokedAt: null, accessExpiresAt: { $gt: new Date() } }).lean();
     if (!await validGrant(row)) return null;
     await McpGrant.updateOne({ grantId: row.grantId, revokedAt: null }, { $set: { lastUsedAt: new Date() } });
-    return { orgId: row.orgId, tokenId: `oauth:${row.grantId}` };
+    const account = await Account.findOne({ accountId: row.accountId }).select("email").lean();
+    if (!account) return null;
+    return { orgId: row.orgId, email: account.email, tokenId: `oauth:${row.grantId}`, scope: row.accessScope || row.scope || SCOPE };
 }
 async function revoke(body) {
     const client = await authenticateClient(body);
@@ -247,7 +253,7 @@ async function management(orgId) {
     const accounts = await Account.find({ accountId: { $in: grants.map(row => row.accountId) } }).select("accountId email").lean();
     const emailOf = new Map(accounts.map(row => [row.accountId, row.email]));
     return { clients: clients.map(row => ({ clientId: row.clientId, name: row.name, redirectUris: row.redirectUris, createdAt: row.createdAt })),
-        connections: grants.map(row => ({ grantId: row.grantId, clientName: row.clientName, userEmail: emailOf.get(row.accountId) || "Former member", createdAt: row.createdAt, expiresAt: row.refreshExpiresAt, lastUsedAt: row.lastUsedAt })) };
+        connections: grants.map(row => ({ grantId: row.grantId, clientName: row.clientName, userEmail: emailOf.get(row.accountId) || "Former member", scope: row.scope || SCOPE, createdAt: row.createdAt, expiresAt: row.refreshExpiresAt, lastUsedAt: row.lastUsedAt })) };
 }
 async function createClient(orgId, body) {
     const name = string(body.name, "name", 80).trim(), redirectUris = redirects(body.redirectUris);
@@ -268,10 +274,10 @@ function authorizationMetadata() {
         registration_endpoint: `${ISSUER}/oauth/mcp/register`, revocation_endpoint: `${ISSUER}/oauth/mcp/revoke`,
         response_types_supported: ["code"], response_modes_supported: ["query"], grant_types_supported: ["authorization_code", "refresh_token"],
         code_challenge_methods_supported: ["S256"], token_endpoint_auth_methods_supported: ["none", "client_secret_post"],
-        scopes_supported: [SCOPE], authorization_response_iss_parameter_supported: true, client_id_metadata_document_supported: true };
+        scopes_supported: SCOPES, authorization_response_iss_parameter_supported: true, client_id_metadata_document_supported: true };
 }
 function protectedMetadata() {
-    return { resource: RESOURCE, authorization_servers: [ISSUER], scopes_supported: [SCOPE], bearer_methods_supported: ["header"], resource_name: "Zealoop widget installation" };
+    return { resource: RESOURCE, authorization_servers: [ISSUER], scopes_supported: SCOPES, bearer_methods_supported: ["header"], resource_name: "Zealoop workspace" };
 }
 module.exports = { OAuthError, ISSUER, RESOURCE, SCOPE, CHALLENGE, register, startAuthorization, consentInfo, decide, token, revoke, resolveAccess,
     management, createClient, deleteClient, revokeConnection, authorizationMetadata, protectedMetadata, redirectAllowed, matchesRedirect, clientById };

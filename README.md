@@ -328,25 +328,46 @@ escalated for human investigation, without automatic retry. The model receives
 the latest 50 history messages; widget reloads receive the latest 100. Human
 handoff suppresses AI replies, including a takeover during generation.
 
-## MCP installation server
+## MCP workspace server
 
 `/mcp` is an authenticated Streamable HTTP endpoint built with the official MCP
 SDK. It supports 2026-07-28 clients and stateless legacy 2025 initialization.
-Three read-only tools expose the token's workspace installation config,
-framework-specific code, and a bounded public-page source check:
-`zealoop_get_install_config`, `zealoop_get_install_instructions`, and
-`zealoop_verify_installation`. The coding agent edits the customer's repository
-or CMS using its existing permissions. These tools do not publish a site.
+Browser sign-in supports discovery, dynamic registration, client metadata,
+S256 PKCE, refresh rotation and one-organization consent. Optional named client
+credentials and manually issued bearer tokens are managed by owners/admins.
 
-Owners/admins manage credentials at `/api/org/:orgId/mcp/tokens` (GET/POST)
-and `/api/org/:orgId/mcp/tokens/:tokenId` (DELETE). Plaintext credentials are
-shown once, SHA-256 hashes are stored, and tokens expire in 30 days. Every MCP
-request checks the issuer's verified account/session version and current
-workspace role, plus revocation/expiry and shared MongoDB request budgets.
-Sign-out and password reset invalidate issued installation credentials.
-Tokens cannot access REST API data or widget signing secrets. Creation and
-revocation are audited. There is no OAuth flow in this initial integration;
-clients must support a configured bearer header.
+Scopes are explicit: `zealoop:install` exposes three widget installation tools;
+`zealoop:read` exposes workspace status, resource/schema discovery, knowledge,
+customer conversations/profiles, tables, configuration and analytics;
+`zealoop:write` additionally permits creating/updating resources and evaluations.
+Write includes read capability. All three scopes expose 38 tools. Legacy grants
+and tokens with no scope remain installation-only; no migration silently upgrades
+their permissions. New token requests default to installation-only, and the
+OAuth consent screen explains the scopes requested by the client.
+
+`zealoop_get_workspace_status` orients an agent with plan, usage and resource
+counts. `zealoop_get_api_reference` returns the actual granted tool schemas.
+`functions/mcp/workspaceTools.js` registers bounded operations backed by the
+same domain services and plan gates as the dashboard. New configuration is
+always disabled DRAFT; procedures/actions start disabled. Publication, live
+edits, restoration, activation and cleanup require preview/confirmation.
+Actions require a passed, non-mock dashboard test before MCP activation; previews
+do not execute endpoints. Cleanup checks the MCP artifact ownership ledger and
+protects human-created resources, built-ins, live config and active resources.
+
+Draft evaluations use AsyncLocalStorage to include draft guidance only within
+that request; database publication state never changes. MCP evaluations block
+external REST/MCP action calls, while explicitly configured mocks can run.
+Evaluation conversations/traces are ephemeral; suite results remain available.
+
+Owners/admins manage bearer credentials at `/api/org/:orgId/mcp/tokens` (GET/POST)
+and `/api/org/:orgId/mcp/tokens/:tokenId` (DELETE). Credentials are shown once,
+SHA-256 hashes are stored, and tokens expire in 30 days. Every MCP request
+rechecks account verification, session version, current role, revocation,
+expiry and shared MongoDB budgets. Sign-out/password reset invalidate issued
+credentials. Scopes never grant dashboard REST authentication, billing changes,
+customer reply sending, signing secrets or website deployment. Writes are audited
+without credential values. Results omit action headers and knowledge embeddings.
 
 `API_URL` must match the public MCP Host header. Browser origins must match
 `API_URL` or `CORS_DASHBOARD_ORIGINS`; command-line clients omit Origin. The
@@ -354,11 +375,12 @@ endpoint is readiness-gated and uses strict SDK tool schemas, rather than the
 Mongo operator middleware that rejects MCP's namespaced metadata keys.
 
 Installation instructions use the hosted loader because the npm SDK is not
-published. Verification rejects redirects (use the canonical page URL), private
-network targets and URLs with credentials. It fetches at most 1 MB within 10
-seconds and returns only source-detection booleans, not remote HTML or its
-instructions. Source presence and reported runtime telemetry do not prove JS
-execution; check the deployed launcher and CSP errors in a browser.
+published. Verification rejects redirects, private targets and credential-bearing
+URLs, fetches at most 1 MB within 10 seconds, and returns source-detection flags,
+never remote HTML. Source presence/telemetry do not prove JavaScript execution;
+check the launcher and CSP errors in a browser. Coding agents edit the customer's
+repository/CMS using their existing permissions and deployment authorization.
 
 Client configuration: <https://www.zealoop.com/docs/mcp>. Regression coverage:
-`npm test -- tests/mcp.test.js`; the full `npm test` includes these tests.
+`node scripts/runTests.js tests/mcpWorkspace.test.js tests/mcpOAuth.test.js`;
+the full `npm test` also includes protocol, credential and public-page checks.

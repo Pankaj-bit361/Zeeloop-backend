@@ -1,7 +1,6 @@
 const mongoose = require("mongoose");
 
-// Dedicated installation credentials cannot access conversations, billing or
-// widget secrets. The plaintext is returned once and never persisted.
+// Legacy credentials remain installation-only. Plaintext is never persisted.
 const schema = new mongoose.Schema({
     tokenId: { type: String, required: true, unique: true },
     orgId: { type: String, required: true, index: true },
@@ -11,6 +10,7 @@ const schema = new mongoose.Schema({
     tokenHash: { type: String, required: true, unique: true, select: false },
     preview: { type: String, required: true },
     name: { type: String, required: true },
+    scope: { type: String, default: "zealoop:install" },
     expiresAt: { type: Date, required: true },
     revokedAt: { type: Date, default: null },
     lastUsedAt: { type: Date, default: null },

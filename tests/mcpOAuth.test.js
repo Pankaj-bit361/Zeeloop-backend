@@ -22,7 +22,7 @@ before(async () => {
     assert.equal(registered.status, 201); client = registered.json;
 });
 beforeEach(async () => {
-    await RateBucket.deleteMany({ key: { $in: [sha("mcp-oauth:ip:127.0.0.1"), sha("mcp:ip:127.0.0.1")] } });
+    await RateBucket.deleteMany({ key: { $in: ["127.0.0.1", "::ffff:127.0.0.1", "::1"].flatMap(ip => [sha(`mcp-oauth:ip:${ip}`), sha(`mcp:ip:${ip}`)]) } });
     await McpGrant.updateMany({ orgId: { $in: [owner.orgId, sibling.orgId] } }, { $set: { revokedAt: new Date() }, $unset: { activeSlot: 1 } });
 });
 after(async () => { await mongoose.disconnect(); });
@@ -151,6 +151,7 @@ describe("MCP OAuth token isolation, rotation and disconnect", () => {
         const start = await fetch(authorizationUrl, { redirect: "manual" });
         assert.equal(start.status, 302); const id = new URL(start.headers.get("location")).searchParams.get("request");
         const info = (await get(`/api/auth/mcp/authorize/${id}`, { cookie: owner.cookie })).json.data;
+        assert.equal(info.scope, "zealoop:install zealoop:read zealoop:write");
         const decision = await post(`/api/auth/mcp/authorize/${id}`, { cookie: owner.cookie, body: { csrfToken: info.csrfToken, decision: "approve", orgId: owner.orgId } });
         const params = new URL(decision.json.data.redirectUrl).searchParams; assert.equal(params.get("state"), "sdk-state");
         const forged = new URLSearchParams(params); forged.set("iss", "https://attacker.example");
@@ -159,10 +160,10 @@ describe("MCP OAuth token isolation, rotation and disconnect", () => {
         const sdk = new Client({ name: "sdk-after-sign-in", version: "1" });
         try {
             await sdk.connect(new StreamableHTTPClientTransport(new URL(resource), { authProvider: provider }));
-            assert.equal((await sdk.listTools()).tools.length, 3);
+            assert.equal((await sdk.listTools()).tools.length, 38);
             const old = savedTokens.access_token;
             await McpGrant.updateOne({ accessHash: sha(old) }, { $set: { accessExpiresAt: new Date(0) } });
-            assert.equal((await sdk.listTools()).tools.length, 3); assert.notEqual(savedTokens.access_token, old);
+            assert.equal((await sdk.listTools()).tools.length, 38); assert.notEqual(savedTokens.access_token, old);
         } finally { await sdk.close(); }
     });
     test("a real SDK connects with an OAuth token and sees only the selected organization", async () => {
@@ -290,5 +291,42 @@ describe("MCP OAuth named clients and management", () => {
         const response = await fetch(`${BASE_URL}/oauth/mcp/token`, { method: "POST", headers: { "content-type": "application/x-www-form-urlencoded" },
             body: new URLSearchParams({ client_id: client.client_id, grant_type: "authorization_code", code: grant.code, redirect_uri: callback, code_verifier: grant.verifier, resource }) });
         assert.equal(response.status, 200); assert.equal(response.headers.get("cache-control"), "private, no-store");
+    });
+});
+
+describe("MCP workspace scope authorization", () => {
+    test("requested workspace scopes survive consent, code exchange, refresh and transport discovery", async () => {
+        const requested = "zealoop:write zealoop:read zealoop:install zealoop:read";
+        const grant = await approve(owner, { scope: requested });
+        assert.equal(grant.info.scope, "zealoop:install zealoop:read zealoop:write");
+        const exchanged = await exchange(grant); assert.equal(exchanged.status, 200);
+        assert.equal(exchanged.json.scope, grant.info.scope);
+        const sdk = new Client({ name: "workspace-oauth", version: "1" });
+        try {
+            await sdk.connect(new StreamableHTTPClientTransport(new URL(resource), { requestInit: { headers: authHeader(exchanged.json.access_token) } }));
+            assert.equal((await sdk.listTools()).tools.length, 38);
+            const status = await sdk.callTool({ name: "zealoop_get_workspace_status", arguments: {} });
+            assert.equal(status.structuredContent.data.workspace.orgId, owner.orgId);
+        } finally { await sdk.close(); }
+        const rotated = await refresh(exchanged.json, { scope: "zealoop:read" }); assert.equal(rotated.status, 200); assert.equal(rotated.json.scope, "zealoop:read");
+        const read = new Client({ name: "oauth-reader", version: "1" });
+        try {
+            await read.connect(new StreamableHTTPClientTransport(new URL(resource), { requestInit: { headers: authHeader(rotated.json.access_token) } }));
+            const names = (await read.listTools()).tools.map(row => row.name);
+            assert.ok(names.includes("zealoop_get_workspace_status")); assert.ok(!names.includes("zealoop_create_config")); assert.ok(!names.includes("zealoop_get_install_config"));
+        } finally { await read.close(); }
+    });
+    test("installation consent cannot upgrade through code or refresh scope parameters", async () => {
+        const grant = await approve();
+        const forbidden = await exchange(grant, { scope: "zealoop:install zealoop:read zealoop:write" });
+        assert.equal(forbidden.status, 400); assert.equal(forbidden.json.error, "invalid_scope");
+        const original = await exchange(grant); assert.equal(original.status, 200); assert.equal(original.json.scope, scope);
+        const upgraded = await refresh(original.json, { scope: "zealoop:write" }); assert.equal(upgraded.status, 400); assert.equal(upgraded.json.error, "invalid_scope");
+        const valid = await refresh(original.json); assert.equal(valid.status, 200); assert.equal(valid.json.scope, scope);
+        const credential = await McpGrant.findOne({ accessHash: sha(valid.json.access_token) }).lean();
+        await McpGrant.collection.updateOne({ grantId: credential.grantId }, { $unset: { scope: 1, accessScope: 1 } });
+        const response = await rpc(valid.json.access_token); assert.equal(response.status, 200);
+        const text = await response.text(); const payload = JSON.parse(text.split("\n").find(line => line.startsWith("data:"))?.slice(5) || text);
+        assert.equal(payload.result.tools.length, 3);
     });
 });

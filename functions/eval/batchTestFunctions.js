@@ -361,11 +361,10 @@ class BatchTestFunctions {
                     success: true,
                     data: {
                         run: summary,
-                        // Said explicitly, because a draft run briefly promotes
-                        // this workspace's draft config — see evalRunner.
+                        // Draft configuration stays inside this evaluation context.
                         note:
                             runTarget === ConfigTarget.DRAFT
-                                ? "Draft config was applied for the duration of this run and reverted afterwards."
+                                ? "Draft guidance was evaluated in isolated context; live configuration was unchanged."
                                 : null,
                     },
                 },
