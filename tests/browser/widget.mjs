@@ -56,6 +56,38 @@ async function checkHistory() {
     await startDelayedIdentity();
     await historyPage.reload();
     await startDelayedIdentity();
+
+    // A slow preview fetched before a new message must not erase the new ID
+    // when it arrives after the message response.
+    let releasePreview, previewStarted, previewFinished;
+    const previewGate = new Promise(resolve => { releasePreview = resolve; });
+    const started = new Promise(resolve => { previewStarted = resolve; });
+    const finished = new Promise(resolve => { previewFinished = resolve; });
+    let held = false;
+    const slowPreview = async route => {
+      if (held) return route.continue();
+      held = true;
+      const response = await route.fetch();
+      previewStarted();
+      await previewGate;
+      await route.fulfill({ response });
+      previewFinished();
+    };
+    await historyPage.route("**/api/widget/conversations", slowPreview);
+    await historyFrame().getByRole("button", { name: "Back", exact: true }).click();
+    await started;
+    const newTurn = historyPage.waitForResponse(response => response.url().endsWith("/api/widget/messages") && response.request().method() === "POST");
+    await historyFrame().getByRole("textbox", { name: "Ask Zea a question" }).fill("New conversation while previews load");
+    await historyFrame().getByRole("textbox", { name: "Ask Zea a question" }).press("Enter");
+    const newId = (await (await newTurn).json()).data.conversationId;
+    assert.ok(newId && newId !== id);
+    await historyPage.waitForFunction(({ publicKey, newId }) => JSON.parse(localStorage.getItem(`zealoop:convs:${publicKey}`) || "[]").includes(newId), { publicKey, newId });
+    releasePreview();
+    await finished;
+    await historyPage.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+    assert.equal(await historyPage.evaluate(({ publicKey, newId }) => JSON.parse(localStorage.getItem(`zealoop:convs:${publicKey}`) || "[]").includes(newId), { publicKey, newId }), true);
+    await historyPage.unroute("**/api/widget/conversations", slowPreview);
+
     // Another person on this browser gets neither the old row nor transcript.
     await historyPage.evaluate(() => window.Zealoop("identify", { email: "another-browser-visitor@example.com" }));
     await historyFrame().getByRole("button", { name: "Messages", exact: true }).click();
@@ -65,7 +97,7 @@ async function checkHistory() {
     await historyFrame().getByRole("button", { name: "Messages", exact: true }).click();
     await historyFrame().getByRole("button", { name: /Saved browser conversation/ }).waitFor();
     await historyPage.screenshot({ path: "test-results/restored-history.png" });
-    console.log("Browser history passed: delayed identity, reload, visitor isolation and return");
+    console.log("Browser history passed: delayed identity, reload, late preview, visitor isolation and return");
 
     const endUser = await EndUser.findOne({ orgId, email: identity.email });
     await Conversation.updateOne({ orgId, conversationId: id }, { $set: { endUserId: endUser.endUserId } });
