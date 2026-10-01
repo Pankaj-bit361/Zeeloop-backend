@@ -14,7 +14,8 @@
         "test:browser": "node scripts/runTests.js --browser",
         "test:against-running-api": "NEW_RELIC_ENABLED=false node --test tests/**/*.test.js",
         "verify:plans": "node scripts/verifyPlans.js",
-        "widget:sync": "node scripts/syncWidget.js"
+        "widget:sync": "node scripts/syncWidget.js",
+        "search:indexes": "node scripts/searchIndexes.js"
     },
     "dependencies": {
         "@modelcontextprotocol/node": "^2.1.0",

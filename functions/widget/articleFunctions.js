@@ -1,11 +1,10 @@
-const config = require("../../config/config");
 const { SourceStatus } = require("../../config/enums");
 const Org = require("../../models/org/org");
 const Chunk = require("../../models/knowledge/chunk");
 const KnowledgeSource = require("../../models/knowledge/knowledgeSource");
 const generalFunctions = require("../utilFunctions/generalFunctions");
 const { asId } = require("../utilFunctions/generalFunctions");
-const llmFunctions = require("../utilFunctions/llmFunctions");
+const searchFunctions = require("../knowledge/searchFunctions");
 
 // §4.9 — article search and reading inside the widget.
 //
@@ -66,7 +65,7 @@ class ArticleFunctions {
             const sources = await KnowledgeSource.find({ orgId: org.orgId, status: SourceStatus.READY })
                 .sort({ updatedAt: -1 })
                 .limit(Math.min(MAX_RESULTS, Number(limit) || 5))
-                .select("sourceId title url type updatedAt")
+                .select("sourceId name title url type updatedAt")
                 .lean();
 
             return {
@@ -75,7 +74,7 @@ class ArticleFunctions {
                     success: true,
                     data: sources.map((source) => ({
                         sourceId: source.sourceId,
-                        title: source.title || source.url || "Untitled",
+                        title: source.title || source.name || source.url || "Untitled",
                         url: source.url || null,
                         snippet: "",
                         updatedAt: source.updatedAt,
@@ -102,7 +101,7 @@ class ArticleFunctions {
             // Scoped by orgId as well as sourceId. Without the orgId a guessed
             // source id from another workspace would read fine.
             const source = await KnowledgeSource.findOne({ orgId: org.orgId, sourceId })
-                .select("sourceId title url type status content")
+                .select("sourceId name title url type status content")
                 .lean();
             if (!source || source.status !== SourceStatus.READY) {
                 return { status: 404, json: { success: false, error: "Article not found" } };
@@ -119,7 +118,7 @@ class ArticleFunctions {
                     success: true,
                     data: {
                         sourceId: source.sourceId,
-                        title: source.title || source.url || "Untitled",
+                        title: source.title || source.name || source.url || "Untitled",
                         url: source.url || null,
                         sections: chunks.map((chunk) => ({
                             heading: (chunk.headingPath || []).join(" › "),
@@ -138,37 +137,13 @@ class ArticleFunctions {
 
     // ── Private Helper Functions ─────────────────────────────────────
 
-    // Vector where available, keyword otherwise. Same graceful degradation as
-    // the agent's retrieval: a cluster without the Atlas indexes returns
-    // keyword results rather than nothing, because an empty help centre looks
-    // like a broken product.
+    // The agent and Help tab use the same semantic + heading-aware retrieval,
+    // including the fallback for an empty, missing or rebuilding Atlas index.
     async _hybridArticleSearch({ orgId, query, limit }) {
-        let hits = [];
-
-        try {
-            const [vector] = await llmFunctions.embed({ texts: [query] });
-            hits = await Chunk.aggregate([
-                {
-                    $vectorSearch: {
-                        index: config.VECTOR_INDEX_NAME,
-                        path: "embedding",
-                        queryVector: vector,
-                        numCandidates: 60,
-                        limit: limit * 3,
-                        filter: { orgId },
-                    },
-                },
-                { $project: { _id: 0, sourceId: 1, text: 1, headingPath: 1, score: { $meta: "vectorSearchScore" } } },
-            ]);
-        } catch (error) {
-            console.log("ArticleFunctions:_hybridArticleSearch: vector unavailable, using keyword");
-            console.error(error.message);
-            const escaped = query.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-            hits = await Chunk.find({ orgId, text: { $regex: escaped, $options: "i" } })
-                .limit(limit * 3)
-                .select("sourceId text headingPath")
-                .lean();
-        }
+        const sources = await KnowledgeSource.find({ orgId, status: SourceStatus.READY })
+            .select("sourceId name title url").lean();
+        const titles = new Map(sources.map((source) => [source.sourceId, source]));
+        const hits = await searchFunctions.hybridSearch({ orgId, query, sourceIds: [...titles.keys()] });
 
         // One result per article, not per chunk. A customer searching "refund"
         // wants the refund article once, not its six paragraphs as six results.
@@ -178,22 +153,18 @@ class ArticleFunctions {
             bySource.set(hit.sourceId, hit);
         }
 
-        const sourceIds = [...bySource.keys()].slice(0, limit);
+        const sourceIds = [...bySource.keys()];
         if (sourceIds.length === 0) return [];
-
-        const sources = await KnowledgeSource.find({ orgId, sourceId: { $in: sourceIds }, status: SourceStatus.READY })
-            .select("sourceId title url")
-            .lean();
-        const titles = new Map(sources.map((source) => [source.sourceId, source]));
 
         return sourceIds
             .filter((sourceId) => titles.has(sourceId))
+            .slice(0, limit)
             .map((sourceId) => {
                 const hit = bySource.get(sourceId);
                 const source = titles.get(sourceId);
                 return {
                     sourceId,
-                    title: source.title || source.url || "Untitled",
+                    title: source.title || source.name || source.url || "Untitled",
                     url: source.url || null,
                     heading: (hit.headingPath || []).join(" › "),
                     snippet: this._snippet(hit.text, query),
@@ -206,8 +177,8 @@ class ArticleFunctions {
     // opening sentence.
     _snippet(text, query) {
         const body = String(text || "").replace(/\s+/g, " ");
-        const needle = query.toLowerCase().split(/\s+/)[0];
-        const at = body.toLowerCase().indexOf(needle);
+        const matches = searchFunctions.searchTerms(query).map((term) => body.toLowerCase().indexOf(term)).filter((at) => at >= 0);
+        const at = matches.length ? Math.min(...matches) : -1;
         if (at === -1) return body.slice(0, SNIPPET_CHARS).trim();
 
         const start = Math.max(0, at - 60);

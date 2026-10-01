@@ -18,6 +18,7 @@ const TurnTrace = require("../../models/trace/turnTrace");
 const generalFunctions = require("../utilFunctions/generalFunctions");
 const redactionFunctions = require("../utilFunctions/redactionFunctions");
 const llmFunctions = require("../utilFunctions/llmFunctions");
+const searchFunctions = require("../knowledge/searchFunctions");
 const actionFunctions = require("../action/actionFunctions");
 const guidanceFunctions = require("../config/guidanceFunctions");
 const procedureFunctions = require("../procedure/procedureFunctions");
@@ -210,7 +211,7 @@ class AgentFunctions {
         report("searching");
         const retrieveStart = Date.now();
         const [candidates, tableContext, availableActions, procedure] = await Promise.all([
-            this._hybridSearch({ orgId: org.orgId, query, queryEmbeddingPromise }),
+            this._hybridSearch({ orgId: org.orgId, query, rawQuery: rawMessage, queryEmbeddingPromise }),
             this._loadTables({ orgId: org.orgId, endUser, identityVerified }),
             this._loadActions({ orgId: org.orgId }),
             this._loadProcedures({ orgId: org.orgId, query }),
@@ -420,7 +421,7 @@ class AgentFunctions {
                 .join("\n");
             const result = await llmFunctions.completeJson({
                 model: config.SMALL_MODEL,
-                system: "Rewrite the user's latest message as a standalone search query, resolving pronouns and references from the conversation. Keep it short.",
+                system: "Rewrite the user's latest message as a standalone search query, resolving only necessary pronouns and references from the conversation. Keep it short and preserve the user's intent. If the message is already standalone, return it unchanged. Never add lists of products, alternatives, assumptions, or facts the user did not ask about. 'You' refers to the support agent, not a product mentioned earlier.",
                 schemaHint: `{"query": string}`,
                 messages: [{ role: "user", content: `Conversation:\n${recent}\n\nLatest message: ${JSON.stringify(rawMessage)}` }],
                 maxTokens: 128,
@@ -441,161 +442,26 @@ class AgentFunctions {
         }
     }
 
-    // Hybrid retrieval: Atlas $vectorSearch + $search merged with reciprocal
-    // rank fusion (1 / (60 + rank)). Graceful empty result if indexes are missing.
-    async _hybridSearch({ orgId, query, queryEmbeddingPromise }) {
-        let queryEmbedding = null;
-        try {
-            // A first turn arrives with its embedding already in flight — it
-            // was started alongside the gate, see _runPipeline.
-            const embeddings = await (queryEmbeddingPromise || llmFunctions.embed({ texts: [query] }));
-            queryEmbedding = embeddings[0];
-        } catch (error) {
-            console.log("AgentFunctions:_hybridSearch: embed failed, text-only search");
-            console.error(error);
-            generalFunctions.captureException(error);
-        }
-
-        const [vectorHits, textHits] = await Promise.all([
-            queryEmbedding ? this._vectorSearch({ orgId, queryEmbedding }) : Promise.resolve([]),
-            this._textSearch({ orgId, query }),
-        ]);
-
-        // Reciprocal rank fusion
-        const fused = new Map();
-        vectorHits.forEach((hit, rank) => {
-            const entry = fused.get(hit.chunkId) || { ...hit, fusionScore: 0 };
-            entry.fusionScore += 1 / (config.FUSION_K + rank + 1);
-            entry.vectorScore = hit.vectorScore;
-            fused.set(hit.chunkId, entry);
+    // Shared retrieval with the help centre. Keep these small wrappers so
+    // pipeline tests can isolate providers without replacing fallback ranking.
+    async _hybridSearch({ orgId, query, rawQuery, queryEmbeddingPromise }) {
+        return searchFunctions.hybridSearch({
+            orgId, query, rawQuery, queryEmbeddingPromise,
+            vectorSearch: (args) => this._vectorSearch(args),
+            textSearch: (args) => this._textSearch(args),
         });
-        textHits.forEach((hit, rank) => {
-            const entry = fused.get(hit.chunkId) || { ...hit, fusionScore: 0 };
-            entry.fusionScore += 1 / (config.FUSION_K + rank + 1);
-            entry.textScore = hit.textScore;
-            fused.set(hit.chunkId, entry);
-        });
-
-        return [...fused.values()]
-            .sort((a, b) => b.fusionScore - a.fusionScore)
-            .slice(0, config.RETRIEVAL_CANDIDATES);
     }
 
-    async _vectorSearch({ orgId, queryEmbedding }) {
-        try {
-            const results = await Chunk.aggregate([
-                {
-                    $vectorSearch: {
-                        index: config.VECTOR_INDEX_NAME,
-                        path: "embedding",
-                        queryVector: queryEmbedding,
-                        numCandidates: config.RETRIEVAL_CANDIDATES * 4,
-                        limit: config.RETRIEVAL_CANDIDATES,
-                        filter: { orgId },
-                    },
-                },
-                {
-                    $project: {
-                        _id: 0,
-                        chunkId: 1,
-                        sourceId: 1,
-                        text: 1,
-                        headingPath: 1,
-                        vectorScore: { $meta: "vectorSearchScore" },
-                    },
-                },
-            ]);
-            return results;
-        } catch (error) {
-            // Index missing (local Mongo, fresh Atlas cluster) → empty, not a crash
-            console.log("AgentFunctions:_vectorSearch: index unavailable, returning empty");
-            console.error(error.message);
-            return [];
-        }
+    async _vectorSearch(args) {
+        return searchFunctions.vectorSearch(args);
     }
 
-    async _textSearch({ orgId, query }) {
-        try {
-            const results = await Chunk.aggregate([
-                {
-                    $search: {
-                        index: config.TEXT_INDEX_NAME,
-                        compound: {
-                            must: [{ text: { query, path: "text" } }],
-                            filter: [{ text: { query: orgId, path: "orgId" } }],
-                        },
-                    },
-                },
-                { $limit: config.RETRIEVAL_CANDIDATES },
-                {
-                    $project: {
-                        _id: 0,
-                        chunkId: 1,
-                        sourceId: 1,
-                        text: 1,
-                        headingPath: 1,
-                        textScore: { $meta: "searchScore" },
-                    },
-                },
-            ]);
-            return results;
-        } catch (error) {
-            console.log("AgentFunctions:_textSearch: index unavailable, using keyword fallback");
-            console.error(error.message);
-            return this._keywordSearch({ orgId, query });
-        }
+    async _textSearch(args) {
+        return searchFunctions.textSearch(args);
     }
 
-    // Keyword fallback when the Atlas $search index is missing (local Mongo,
-    // fresh cluster). Scores chunks by distinct query-term hits, headings
-    // weighted double. Same result shape as _textSearch so fusion is unchanged.
-    async _keywordSearch({ orgId, query }) {
-        try {
-            const stopwords = new Set([
-                "the", "and", "for", "are", "but", "not", "you", "your", "with", "can", "how",
-                "what", "when", "where", "why", "who", "does", "did", "will", "would", "could",
-                "should", "have", "has", "had", "was", "were", "been", "being", "them", "they",
-                "this", "that", "there", "their", "from", "about", "into", "than", "then", "get",
-                "much", "many", "any", "all", "long", "take", "make", "need", "want", "please",
-            ]);
-            // Light stemming so "refunds"/"refunded" match "refund".
-            const stem = (term) => {
-                if (term.length > 5 && term.endsWith("ing")) return term.slice(0, -3);
-                if (term.length > 4 && (term.endsWith("ed") || term.endsWith("es"))) return term.slice(0, -2);
-                if (term.length > 3 && term.endsWith("s") && !term.endsWith("ss")) return term.slice(0, -1);
-                return term;
-            };
-            const terms = [...new Set(
-                String(query).toLowerCase().split(/[^a-z0-9]+/)
-                    .filter((term) => term.length >= 3 && !stopwords.has(term))
-                    .map(stem)
-            )].slice(0, 8);
-            if (terms.length === 0) return [];
-
-            const regexes = terms.map((term) => new RegExp(term.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i"));
-            const candidates = await Chunk.find({ orgId, $or: regexes.map((regex) => ({ text: regex })) })
-                .select("chunkId sourceId text headingPath")
-                .limit(200)
-                .lean();
-
-            return candidates
-                .map((chunk) => {
-                    const heading = (chunk.headingPath || []).join(" ");
-                    let hits = 0;
-                    for (const regex of regexes) {
-                        if (regex.test(chunk.text)) hits += 1;
-                        if (regex.test(heading)) hits += 2;
-                    }
-                    return { ...chunk, textScore: hits / (terms.length * 3) };
-                })
-                .filter((chunk) => chunk.textScore > 0)
-                .sort((a, b) => b.textScore - a.textScore)
-                .slice(0, config.RETRIEVAL_CANDIDATES);
-        } catch (error) {
-            console.error("AgentFunctions:_keywordSearch: Catch block");
-            console.error(error.message);
-            return [];
-        }
+    async _keywordSearch(args) {
+        return searchFunctions.keywordSearch(args);
     }
 
     // Verified identity unlocks the user's own table rows — nobody else's.
@@ -636,7 +502,7 @@ class AgentFunctions {
         try {
             const ranked = await llmFunctions.rerank({
                 query,
-                documents: candidates.map((candidate) => candidate.text),
+                documents: candidates.map((candidate) => `${(candidate.headingPath || []).join(" > ")}\n${candidate.text}`),
                 topN: config.RERANK_TOP_N,
             });
             const topChunks = ranked.map((entry) => ({
@@ -911,6 +777,8 @@ class AgentFunctions {
         parts.push(
             `You are ${org.agent.name}, the customer support agent for ${org.name}. Answer ONLY from the context below. If the context does not contain the answer, say so plainly. Never invent facts, prices, or policies.`
         );
+        parts.push("For broad comparison or recommendation questions, explain the supported options and decision criteria in the knowledge. If a recommendation requires the customer's goals or situation, ask one focused question with type clarify. Missing preferences alone are not a reason to offer a teammate.");
+        parts.push("For a short topic with several possible meanings, ask one focused clarifying question with type clarify before assuming product capabilities. A clarification should ask for the missing detail, without introducing unsupported facts.");
 
         const identity = guidanceFunctions.composeIdentityAndContext({ org });
         if (identity.prompt) parts.push(identity.prompt);

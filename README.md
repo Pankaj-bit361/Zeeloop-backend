@@ -61,10 +61,24 @@ uncompressed. It picks the build's `.br` or `.gz` sibling from
 `tests/widgetAssets.test.js` covers encoding choice, cache headers, the stale
 fingerprint fallback, path traversal and the trailing-slash redirect.
 
-## Atlas search indexes (required for retrieval)
+## Search retrieval and Atlas indexes
 
-Without both indexes `_hybridSearch` returns empty and the agent abstains.
-Create them on the `chunks` collection:
+The agent and widget Help tab share heading-aware text retrieval; the agent
+also blends semantic vector matches. Help searches need no model call. On Atlas,
+startup creates missing indexes on `chunks` using `config/searchIndexes.js`;
+it never replaces or drops an existing index. Creation is asynchronous, and
+health checks report missing or non-queryable indexes. You can also run
+`npm run search:indexes` to perform the same idempotent setup and view status.
+The database user needs the `createSearchIndexes` privilege.
+
+When an index is missing, building, or unavailable (including local MongoDB),
+heading-aware keyword retrieval remains active. It ranks all workspace matches
+before limiting results, boosts rare terms and adjacent query words, keeps two-letter acronyms and Unicode terms, and
+matches words rather than arbitrary substrings. Agent answers still pass the
+grounding validator. Atlas returns empty arrays for some unavailable indexes,
+so fallback applies to both empty results and errors.
+
+Index definitions:
 
 **`chunk_vector_index`** (type: vectorSearch)
 
@@ -86,11 +100,18 @@ Create them on the `chunks` collection:
         "dynamic": false,
         "fields": {
             "text": { "type": "string" },
-            "orgId": { "type": "string" }
+            "headingPath": { "type": "string" },
+            "orgId": { "type": "token" }
         }
     }
 }
 ```
+
+`orgId` is a token field for exact `equals` filtering, and retrieval also
+matches the tenant ID in Mongo before limiting/projecting. A legacy index
+with `orgId: string` can be updated in Atlas to the definition above;
+keyword fallback covers the migration. See [MongoDB search index management](https://www.mongodb.com/docs/search/indexes/manage-indexes/)
+and [exact string filtering](https://www.mongodb.com/docs/search/query/operators-collectors/equals/).
 
 ## Context assembly and the repair pass
 

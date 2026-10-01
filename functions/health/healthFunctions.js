@@ -124,13 +124,15 @@ class HealthFunctions {
 
             const missing = [config.VECTOR_INDEX_NAME, config.TEXT_INDEX_NAME].filter((name) => !names.includes(name));
             if (missing.length > 0) {
-                return { status: Status.FAILING, detail: `missing search indexes: ${missing.join(", ")}`, present: names };
+                return { status: Status.FAILING, detail: `missing search indexes: ${missing.join(", ")}; keyword retrieval active`, present: names };
             }
+            const unavailable = indexes.filter((index) => [config.VECTOR_INDEX_NAME, config.TEXT_INDEX_NAME].includes(index.name) && index.queryable !== true);
+            if (unavailable.length) return { status: Status.FAILING, detail: `search indexes not queryable: ${unavailable.map((index) => `${index.name} (${index.status || "unknown"})`).join(", ")}; keyword retrieval active`, present: names };
             return { status: Status.OK, detail: names.join(", ") };
         } catch (error) {
             return {
                 status: Status.FAILING,
-                detail: "this deployment is not on Atlas, or search indexes are unavailable — hybrid search returns empty",
+                detail: "search indexes unavailable; keyword retrieval active",
             };
         }
     }
