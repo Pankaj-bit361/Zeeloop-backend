@@ -2,7 +2,7 @@
     "name": "zealoop-backend",
     "version": "0.1.0",
     "private": true,
-    "description": "Zealoop \u2014 multi-tenant AI support agent backend",
+    "description": "Zealoop — multi-tenant AI support agent backend",
     "main": "server.js",
     "scripts": {
         "dev": "node --watch server.js",
@@ -10,11 +10,15 @@
         "seed:widget-demo": "node scripts/widgetDemo.js",
         "seed": "node scripts/seed.js",
         "reset": "node scripts/reset.js",
-        "test": "NEW_RELIC_ENABLED=false node --test tests/**/*.test.js",
+        "test": "node scripts/runTests.js",
+        "test:browser": "node scripts/runTests.js --browser",
+        "test:against-running-api": "NEW_RELIC_ENABLED=false node --test tests/**/*.test.js",
         "verify:plans": "node scripts/verifyPlans.js",
         "widget:sync": "node scripts/syncWidget.js"
     },
     "dependencies": {
+        "@modelcontextprotocol/node": "^2.1.0",
+        "@modelcontextprotocol/server": "^2.2.0",
         "cookie-parser": "^1.4.7",
         "cors": "^2.8.5",
         "dotenv": "^16.4.5",
@@ -23,7 +27,13 @@
         "jsonwebtoken": "^9.0.2",
         "mongoose": "^8.9.0",
         "newrelic": "^14.3.7",
-        "node-cron": "^3.0.3",
-        "ws": "^8.21.3"
+        "node-cron": "^4.6.0",
+        "proxy-addr": "^2.0.8",
+        "ws": "^8.21.3",
+        "zod": "^4.6.5"
+    },
+    "devDependencies": {
+        "@modelcontextprotocol/client": "^2.2.0",
+        "playwright": "^1.63.0"
     }
 }

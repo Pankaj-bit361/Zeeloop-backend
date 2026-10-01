@@ -22,6 +22,7 @@ const accountSchema = new mongoose.Schema(
         // the same address instead of bouncing with "already exists".
         passwordSetAt: { type: Date, default: null },
         emailVerifiedAt: { type: Date, default: null },
+        sessionVersion: { type: Number, default: 0 },
         providers: { type: [String], enum: Object.values(AuthProvider), default: [] },
         lastLoginAt: { type: Date, default: null },
     },

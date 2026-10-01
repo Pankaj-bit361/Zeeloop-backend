@@ -10,6 +10,7 @@ node_modules/
 logs
 *.log
 npm-debug.log*
+test-results/
 
 # os / editor
 .DS_Store

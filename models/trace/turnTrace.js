@@ -44,6 +44,14 @@ const turnTraceSchema = new mongoose.Schema(
         grounded: { type: Boolean, default: null },
         answersQuery: { type: Boolean, default: null },
         unsupportedClaims: { type: [String], default: [] },
+        // Passages handed to the model after neighbour expansion — usually
+        // fewer than topChunks, because adjacent chunks merge into one.
+        contextChunkCount: { type: Number, default: 0 },
+        // Stage 5b. Attempted when the validator named unsupported claims on an
+        // otherwise-answering reply; succeeded when the rewrite re-validated.
+        // The two together are the repair pass's own hit rate.
+        repairAttempted: { type: Boolean, default: false },
+        repairSucceeded: { type: Boolean, default: false },
 
         // §2.5 — which configuration objects took part in this turn. Attribution
         // counters are computed FROM this by cron, never incremented at write

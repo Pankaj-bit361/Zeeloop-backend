@@ -26,7 +26,7 @@ class AgentFunctions {
     // The whole pipeline. Six stages, order is the contract. Returns
     // { success, reply, citations, toolCalls, outcome, halted }.
     // The TurnTrace is written on EVERY turn, including blocked and failed ones.
-    async runTurn({ org, conversation, endUser, identityVerified, rawMessage, history, channel }) {
+    async runTurn({ org, conversation, endUser, identityVerified, rawMessage, history, channel, onProgress }) {
         console.log("AgentFunctions:runTurn: orgId:", org.orgId, "conversationId:", conversation.conversationId);
 
         const trace = {
@@ -54,11 +54,14 @@ class AgentFunctions {
             outcome: TurnOutcome.ERROR,
             latencyMs: { gate: 0, rewrite: 0, retrieve: 0, rerank: 0, generate: 0, validate: 0 },
             costUsd: 0,
+            contextChunkCount: 0,
+            repairAttempted: false,
+            repairSucceeded: false,
         };
 
         let result;
         try {
-            result = await this._runPipeline({ org, conversation, endUser, identityVerified, rawMessage, history, channel, trace });
+            result = await this._runPipeline({ org, conversation, endUser, identityVerified, rawMessage, history, channel, trace, onProgress });
         } catch (error) {
             console.error("AgentFunctions:runTurn: Catch block");
             console.error(error);
@@ -90,9 +93,45 @@ class AgentFunctions {
 
     // Private Helper Functions
 
-    async _runPipeline({ org, conversation, endUser, identityVerified, rawMessage, history, channel, trace }) {
-        // Stage 0 — gate (fail open)
+    async _runPipeline({ org, conversation, endUser, identityVerified, rawMessage, history, channel, trace, onProgress }) {
+        // Progress is advisory. It feeds the widget's typing bubble over the
+        // socket and nothing else, so a listener that throws must not be able
+        // to fail the turn.
+        const report = (stage, detail) => {
+            if (typeof onProgress !== "function") return;
+            try {
+                onProgress({ stage, ...(detail || {}) });
+            } catch (error) {
+                console.log("AgentFunctions:_runPipeline: progress listener threw, ignoring");
+            }
+        };
+
+        // Stage 0 — gate (fail open) and Stage 1 — rewrite, started together.
+        // Neither reads the other's output: the gate classifies the raw message,
+        // the rewrite resolves it against history. Run serially they cost a
+        // full small-model round trip on every follow-up turn, spent waiting
+        // for a verdict the rewrite never needed. Blocked, escalated and
+        // chitchat turns throw the rewrite away — one cheap call wasted on the
+        // rare path against one saved on the common one.
+        //
+        // A first turn has no rewrite, so its query is the raw message and the
+        // embedding can start now as well, instead of after the gate returns.
+        report("classifying");
         const gateStart = Date.now();
+        const firstTurn = trace.turn <= 1 || !history || history.length === 0;
+        const rewritePromise = this._runRewrite({ rawMessage, history, turn: trace.turn, trace })
+            .catch(() => rawMessage)
+            .then((query) => {
+                trace.latencyMs.rewrite = firstTurn ? 0 : Date.now() - gateStart;
+                return query;
+            });
+        let queryEmbeddingPromise = null;
+        if (firstTurn) {
+            queryEmbeddingPromise = llmFunctions.embed({ texts: [rawMessage] });
+            // Observed later inside _hybridSearch. Without this, a rejection
+            // that lands while the gate is still running is an unhandled one.
+            queryEmbeddingPromise.catch(() => {});
+        }
         const gate = await this._runGate({ rawMessage, trace });
         trace.latencyMs.gate = Date.now() - gateStart;
         trace.gateIntent = gate.intent;
@@ -164,15 +203,14 @@ class AgentFunctions {
             return { success: true, reply, citations: [], toolCalls: [], outcome: TurnOutcome.ANSWERED, halted: false };
         }
 
-        // Stage 1 — rewrite (skipped on the first turn; on failure use the raw message)
-        const rewriteStart = Date.now();
-        const query = await this._runRewrite({ rawMessage, history, turn: trace.turn, trace });
-        trace.latencyMs.rewrite = Date.now() - rewriteStart;
+        // Stage 1 — rewrite, running since the gate started.
+        const query = await rewritePromise;
 
         // Stage 2 — retrieval: all four loads in parallel
+        report("searching");
         const retrieveStart = Date.now();
         const [candidates, tableContext, availableActions, procedure] = await Promise.all([
-            this._hybridSearch({ orgId: org.orgId, query }),
+            this._hybridSearch({ orgId: org.orgId, query, queryEmbeddingPromise }),
             this._loadTables({ orgId: org.orgId, endUser, identityVerified }),
             this._loadActions({ orgId: org.orgId }),
             this._loadProcedures({ orgId: org.orgId, query }),
@@ -182,6 +220,7 @@ class AgentFunctions {
         trace.procedureId = procedure ? procedure.procedureId : null;
 
         // Stage 3 — rerank + abstention gate
+        report("reading", { sources: candidates.length });
         const rerankStart = Date.now();
         const { topChunks, belowThreshold } = await this._runRerank({ query, candidates, trace });
         trace.latencyMs.rerank = Date.now() - rerankStart;
@@ -205,9 +244,23 @@ class AgentFunctions {
             };
         }
 
+        // Stage 3b — neighbour expansion (small-to-big). Reranking picks the
+        // 600-token chunk that best matches the question, and the answer is
+        // routinely in the chunk next to it: step 4 of a procedure whose steps
+        // 1–3 scored, the exception paragraph under the policy heading. Each
+        // top chunk is widened to its immediate neighbours in the same
+        // document and overlapping windows are merged, so the model reads one
+        // passage rather than the same paragraph twice. Citations still name
+        // the chunk that matched. The validator reads the widened context too;
+        // otherwise a claim taken from a neighbour would be judged unsupported
+        // by the very text it came from.
+        const contextChunks = await this._expandNeighbors({ orgId: org.orgId, topChunks });
+        trace.contextChunkCount = contextChunks.length;
+
         // Stage 4 — generate (answer, clarifying question, or tool call loop)
+        report("writing");
         const generateStart = Date.now();
-        const generation = await this._runGenerate({
+        const generateArgs = {
             org,
             conversation,
             endUser,
@@ -215,13 +268,14 @@ class AgentFunctions {
             query,
             rawMessage,
             history,
-            topChunks,
+            topChunks: contextChunks,
             tableContext,
             availableActions,
             procedure,
             guidance,
             trace,
-        });
+        };
+        let generation = await this._runGenerate(generateArgs);
         trace.latencyMs.generate = Date.now() - generateStart;
 
         if (generation.halted) {
@@ -238,12 +292,51 @@ class AgentFunctions {
         }
 
         // Stage 5 — validate (fail closed)
+        report("checking");
         const validateStart = Date.now();
-        const verdict = await this._runValidate({ query, reply: generation.reply, topChunks, tableContext, trace });
+        let verdict = await this._runValidate({ query, reply: generation.reply, topChunks: contextChunks, tableContext, trace });
         trace.latencyMs.validate = Date.now() - validateStart;
         trace.grounded = verdict.grounded;
         trace.answersQuery = verdict.answersQuery;
         trace.unsupportedClaims = verdict.unsupportedClaims;
+
+        // Stage 5b — one repair pass. The validator names the claims it could
+        // not find in the context. When the answer otherwise addresses the
+        // question, that list is a precise edit request, and paying one more
+        // generate call to act on it is far cheaper than abstaining on an
+        // answer that was four-fifths right. The repaired text goes through
+        // the validator again on the same terms: it is never shown unchecked,
+        // and a second failure abstains exactly as before. Once only — a loop
+        // here is a model arguing with a validator on the customer's clock.
+        if (this._isRepairable({ generation, verdict })) {
+            report("repairing");
+            trace.repairAttempted = true;
+            const repairStart = Date.now();
+            const repaired = await this._runGenerate({
+                ...generateArgs,
+                repair: { previousReply: generation.reply, unsupportedClaims: verdict.unsupportedClaims },
+            });
+            trace.latencyMs.generate += Date.now() - repairStart;
+            if (repaired.outcome === TurnOutcome.ANSWERED && !repaired.halted && repaired.reply) {
+                const recheckStart = Date.now();
+                const second = await this._runValidate({
+                    query,
+                    reply: repaired.reply,
+                    topChunks: contextChunks,
+                    tableContext,
+                    trace,
+                });
+                trace.latencyMs.validate += Date.now() - recheckStart;
+                if (second.grounded && second.answersQuery) {
+                    generation = repaired;
+                    verdict = second;
+                    trace.repairSucceeded = true;
+                    trace.grounded = second.grounded;
+                    trace.answersQuery = second.answersQuery;
+                    trace.unsupportedClaims = second.unsupportedClaims;
+                }
+            }
+        }
 
         if (!verdict.grounded || !verdict.answersQuery) {
             trace.outcome = TurnOutcome.ABSTAINED;
@@ -350,10 +443,12 @@ class AgentFunctions {
 
     // Hybrid retrieval: Atlas $vectorSearch + $search merged with reciprocal
     // rank fusion (1 / (60 + rank)). Graceful empty result if indexes are missing.
-    async _hybridSearch({ orgId, query }) {
+    async _hybridSearch({ orgId, query, queryEmbeddingPromise }) {
         let queryEmbedding = null;
         try {
-            const embeddings = await llmFunctions.embed({ texts: [query] });
+            // A first turn arrives with its embedding already in flight — it
+            // was started alongside the gate, see _runPipeline.
+            const embeddings = await (queryEmbeddingPromise || llmFunctions.embed({ texts: [query] }));
             queryEmbedding = embeddings[0];
         } catch (error) {
             console.log("AgentFunctions:_hybridSearch: embed failed, text-only search");
@@ -560,7 +655,7 @@ class AgentFunctions {
         }
     }
 
-    async _runGenerate({ org, conversation, endUser, identityVerified, query, rawMessage, history, topChunks, tableContext, availableActions, procedure, guidance, trace }) {
+    async _runGenerate({ org, conversation, endUser, identityVerified, query, rawMessage, history, topChunks, tableContext, availableActions, procedure, guidance, trace, repair }) {
         const { prompt: system, maxTokens } = this._buildSystemPrompt({
             org,
             topChunks,
@@ -577,6 +672,23 @@ class AgentFunctions {
             })),
             { role: "user", content: rawMessage },
         ];
+        if (repair && repair.previousReply) {
+            // The repair pass. The model sees its own answer and the exact
+            // claims the validator rejected, and is asked to rewrite from the
+            // context alone. Framed as a conversation turn rather than a new
+            // system prompt so the history, the knowledge and the guards are
+            // all exactly what the first attempt saw.
+            messages.push({ role: "assistant", content: repair.previousReply });
+            messages.push({
+                role: "user",
+                content:
+                    `A reviewer checked that answer against the KNOWLEDGE and CUSTOMER DATA and could not find support for these claims:\n` +
+                    repair.unsupportedClaims.map((claim) => `- ${claim}`).join("\n") +
+                    `\n\nRewrite the answer using only what the context states. Remove or correct every claim above. ` +
+                    `If the context cannot answer the question without them, say plainly what it does and does not cover. ` +
+                    `Reply in the same JSON format.`,
+            });
+        }
 
         const toolCalls = [];
         for (let iteration = 0; iteration < config.MAX_TOOL_ITERATIONS; iteration++) {
@@ -586,7 +698,7 @@ class AgentFunctions {
                 result = await llmFunctions.completeJson({
                     model: config.ANSWER_MODEL,
                     system,
-                    schemaHint: `{"type": "answer", "text": string, "citationChunkIds": string[]} OR {"type": "clarify", "text": string} OR {"type": "tool_call", "actionId": string, "args": object}`,
+                    schemaHint: `{"type": "answer", "text": string, "citationChunkIds": string[], "followUps": string[]} OR {"type": "clarify", "text": string} OR {"type": "tool_call", "actionId": string, "args": object}`,
                     messages,
                     // Comes from the workspace's answer-length setting (§2.8). A
                     // model told to be concise and handed a thousand tokens uses
@@ -628,6 +740,15 @@ class AgentFunctions {
 
             if (output.type === "tool_call") {
                 const action = availableActions.find((candidate) => candidate.actionId === output.actionId) || null;
+                if (action) {
+                    const resolved = actionFunctions.resolveDataInputs({ action, args: output.args || {},
+                        context: { email: endUser?.email, identityVerified } });
+                    output.args = resolved.resolved;
+                    if (resolved.missing.length) {
+                        return { reply: resolved.missing.map((input) => input.prompt).join(" "),
+                            citations: [], toolCalls, outcome: TurnOutcome.CLARIFIED, halted: false };
+                    }
+                }
                 const blockReason = await this._checkGuards({
                     action,
                     args: output.args,
@@ -649,7 +770,7 @@ class AgentFunctions {
                         toolCalls,
                         outcome: TurnOutcome.CLARIFIED,
                         halted: true,
-                        pendingAction: { actionId: action.actionId, args: output.args },
+                        pendingAction: { actionId: action.actionId, args: output.args, endUserId: endUser ? endUser.endUserId : null },
                     };
                 }
 
@@ -679,6 +800,7 @@ class AgentFunctions {
                     endUserId: endUser ? endUser.endUserId : null,
                     confirmed: false,
                     identityVerified,
+                    identity: endUser ? { email: endUser.email, verified: identityVerified } : null,
                 });
                 toolCalls.push({
                     actionId: action.actionId,
@@ -704,7 +826,14 @@ class AgentFunctions {
                     sourceId: chunk.sourceId,
                     heading: (chunk.headingPath || []).join(" › "),
                 }));
-            return { reply: output.text, citations, toolCalls, outcome: TurnOutcome.ANSWERED, halted: false };
+            return {
+                reply: output.text,
+                citations,
+                toolCalls,
+                outcome: TurnOutcome.ANSWERED,
+                halted: false,
+                followUps: this._cleanFollowUps({ followUps: output.followUps, query, rawMessage }),
+            };
         }
 
         // Tool loop exhausted without an answer
@@ -756,7 +885,7 @@ class AgentFunctions {
         if (!action || !action.enabled) return BlockReason.NOT_AVAILABLE;
         if (action.lastTestStatus !== "PASS") return BlockReason.NEVER_TESTED;
         if (action.requiresIdentity && !identityVerified) return BlockReason.IDENTITY_REQUIRED;
-        if (action.accessType === AccessType.WRITE && action.requiresConfirmation && !confirmed) {
+        if (action.accessType === AccessType.WRITE && confirmed !== true) {
             return BlockReason.CONFIRMATION_REQUIRED;
         }
         return null;
@@ -834,7 +963,7 @@ class AgentFunctions {
         }
 
         parts.push(
-            `Identity verified: ${identityVerified ? "yes" : "no"}. Cite knowledge chunk ids you used in citationChunkIds. If you need information only the user can provide, respond with {"type":"clarify",...}.`
+            `Identity verified: ${identityVerified ? "yes" : "no"}. Cite knowledge chunk ids you used in citationChunkIds. If you need information only the user can provide, respond with {"type":"clarify",...}. In followUps, suggest up to ${config.FOLLOW_UPS_MAX} short questions (under 60 characters each) the customer is likely to ask next AND that the KNOWLEDGE above can answer; leave it empty rather than guess.`
         );
         return { prompt: parts.join("\n\n"), maxTokens: identity.maxTokens };
     }
@@ -866,6 +995,167 @@ class AgentFunctions {
             attributes,
             tableValues: {},
         };
+    }
+
+    // Repair is worth one more call only when the validator's complaint is
+    // specific and the rest of the answer stands: it addressed the question,
+    // it was a plain answer (not a clarification or a tool proposal), and the
+    // validator produced claims to remove. "Does not answer the question" has
+    // no edit that fixes it, and a validator that timed out names no claims.
+    _isRepairable({ generation, verdict }) {
+        if (!generation || !verdict) return false;
+        if (generation.halted || generation.outcome !== TurnOutcome.ANSWERED) return false;
+        if (!generation.reply || (generation.toolCalls || []).length > 0) return false;
+        if (verdict.grounded || !verdict.answersQuery) return false;
+        return Array.isArray(verdict.unsupportedClaims) && verdict.unsupportedClaims.length > 0;
+    }
+
+    // The model's follow-up suggestions, made safe to render as buttons: strings
+    // only, trimmed, bounded in number and length, no duplicates, and never the
+    // question that was just asked.
+    _cleanFollowUps({ followUps, query, rawMessage }) {
+        if (!Array.isArray(followUps)) return [];
+        const seen = new Set([String(query || "").trim().toLowerCase(), String(rawMessage || "").trim().toLowerCase()]);
+        const clean = [];
+        for (const candidate of followUps) {
+            if (typeof candidate !== "string") continue;
+            const text = candidate.replace(/\s+/g, " ").trim();
+            if (text.length < 4 || text.length > config.FOLLOW_UP_MAX_CHARS) continue;
+            const key = text.toLowerCase();
+            if (seen.has(key)) continue;
+            seen.add(key);
+            clean.push(text);
+            if (clean.length >= config.FOLLOW_UPS_MAX) break;
+        }
+        return clean;
+    }
+
+    // Small-to-big: widen the reranked chunks to their neighbours in the same
+    // document, merge overlapping windows, and return one passage per window.
+    // Each passage keeps the chunkId of the best-scoring chunk inside it so
+    // the model's citations still resolve, and `memberChunkIds` records what
+    // was actually read. Bounded by CONTEXT_MAX_TOKENS: passages are widened
+    // in rerank order and a passage that would cross the budget is left as
+    // the bare chunk. Any failure degrades to the input — retrieval already
+    // succeeded, and a lookup problem must not turn that into an abstention.
+    async _expandNeighbors({ orgId, topChunks }) {
+        if (!Array.isArray(topChunks) || topChunks.length === 0) return [];
+        try {
+            const rows = await this._fetchChunkRows({ orgId, topChunks });
+            if (!rows || rows.length === 0) return topChunks;
+
+            const byId = new Map(rows.map((row) => [row.chunkId, row]));
+            const scoreOf = new Map(topChunks.map((chunk) => [chunk.chunkId, chunk.rerankScore || 0]));
+            const topIds = new Set(topChunks.map((chunk) => chunk.chunkId));
+
+            // Group every fetched row (top chunks and neighbours) by document.
+            const docs = new Map();
+            for (const row of rows) {
+                const key = `${row.sourceId}::${row.documentKey || ""}`;
+                if (!docs.has(key)) docs.set(key, []);
+                docs.get(key).push(row);
+            }
+
+            let budget = config.CONTEXT_MAX_TOKENS;
+            const passages = [];
+            const consumed = new Set();
+
+            // Rerank order decides who gets widened first, whatever order the
+            // caller handed them in.
+            const ordered = [...topChunks].sort((a, b) => (b.rerankScore || 0) - (a.rerankScore || 0));
+            for (const top of ordered) {
+                if (consumed.has(top.chunkId)) continue;
+                const row = byId.get(top.chunkId);
+                if (!row) {
+                    passages.push({ ...top, memberChunkIds: [top.chunkId] });
+                    consumed.add(top.chunkId);
+                    budget -= generalFunctions.estimateTokens(top.text || "");
+                    continue;
+                }
+                const key = `${row.sourceId}::${row.documentKey || ""}`;
+                const siblings = (docs.get(key) || []).slice().sort((a, b) => a.position - b.position);
+                const wanted = siblings.filter(
+                    (sibling) => !consumed.has(sibling.chunkId) && Math.abs(sibling.position - row.position) <= config.NEIGHBOR_EXPAND_RADIUS
+                );
+                // Only contiguous positions merge; a gap means the middle chunk
+                // was not fetched, and stitching across it would fabricate a
+                // sentence.
+                const window = [];
+                for (const sibling of wanted) {
+                    if (window.length > 0 && sibling.position !== window[window.length - 1].position + 1) {
+                        if (window.some((member) => member.chunkId === row.chunkId)) break;
+                        window.length = 0;
+                    }
+                    window.push(sibling);
+                }
+                const windowTokens = window.reduce((sum, member) => sum + (member.tokenCount || generalFunctions.estimateTokens(member.text)), 0);
+                const ownTokens = row.tokenCount || generalFunctions.estimateTokens(row.text);
+                const members = windowTokens <= budget ? window : [row];
+                budget -= members === window ? windowTokens : ownTokens;
+
+                // The citation id is the best-scoring top chunk inside the window.
+                const cited = members
+                    .filter((member) => topIds.has(member.chunkId))
+                    .sort((a, b) => (scoreOf.get(b.chunkId) || 0) - (scoreOf.get(a.chunkId) || 0))[0] || row;
+                for (const member of members) consumed.add(member.chunkId);
+                passages.push({
+                    chunkId: cited.chunkId,
+                    sourceId: row.sourceId,
+                    headingPath: cited.headingPath || row.headingPath || [],
+                    text: this._stitchChunks(members.map((member) => member.text)),
+                    vectorScore: top.vectorScore,
+                    textScore: top.textScore,
+                    rerankScore: scoreOf.get(cited.chunkId) || top.rerankScore || 0,
+                    memberChunkIds: members.map((member) => member.chunkId),
+                });
+            }
+            return passages;
+        } catch (error) {
+            console.log("AgentFunctions:_expandNeighbors: failed, using reranked chunks as-is");
+            console.error(error);
+            generalFunctions.captureException(error);
+            return topChunks;
+        }
+    }
+
+    // Two queries: the top chunks themselves (search results do not carry
+    // position or documentKey), then every chunk within the radius in the same
+    // documents. Split out so tests can stand in for the database.
+    async _fetchChunkRows({ orgId, topChunks }) {
+        const ids = topChunks.map((chunk) => chunk.chunkId);
+        const select = "chunkId sourceId documentKey position text headingPath tokenCount";
+        const tops = await Chunk.find({ orgId, chunkId: { $in: ids } }).select(select).lean();
+        if (tops.length === 0) return [];
+        const conditions = tops.map((row) => ({
+            sourceId: row.sourceId,
+            documentKey: row.documentKey || null,
+            position: { $gte: row.position - config.NEIGHBOR_EXPAND_RADIUS, $lte: row.position + config.NEIGHBOR_EXPAND_RADIUS },
+        }));
+        return Chunk.find({ orgId, $or: conditions }).select(select).lean();
+    }
+
+    // Adjacent chunks overlap by CHUNK_OVERLAP_RATIO. Drop the repeated span
+    // where the end of one is the start of the next, so the model does not
+    // read the same sentence twice and treat it as emphasis.
+    _stitchChunks(texts) {
+        let out = "";
+        for (const text of texts) {
+            const next = String(text || "");
+            if (!out) {
+                out = next;
+                continue;
+            }
+            const maxOverlap = Math.min(out.length, next.length, Math.floor(config.CHUNK_TARGET_TOKENS * 4 * config.CHUNK_OVERLAP_RATIO) + 64);
+            let overlap = 0;
+            for (let size = maxOverlap; size >= 20; size--) {
+                if (out.endsWith(next.slice(0, size))) {
+                    overlap = size;
+                    break;
+                }
+            }
+            out = overlap > 0 ? out + next.slice(overlap) : `${out}\n\n${next}`;
+        }
+        return out;
     }
 
     _addUsage(trace, model, result) {

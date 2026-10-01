@@ -20,6 +20,9 @@ const generalFunctions = require("../utilFunctions/generalFunctions");
 // exactly the constraints something depends on.
 
 const CRITICAL_MODELS = [
+    { path: "../../models/security/installToken", why: "MCP installation token uniqueness" },
+    { path: "../../models/security/rateBucket", why: "shared rate-limit counters" },
+    { path: "../../models/action/actionExecution", why: "action execution idempotency" },
     // Webhook idempotency — the same provider event must never double-apply.
     { path: "../../models/billing/webhookEvent", why: "billing webhook idempotency" },
     // Transactional email — a cron that fires twice must not send twice.
@@ -57,12 +60,13 @@ class IndexReadiness {
                     continue;
                 }
 
-                await Promise.race([
+                let timer;
+                try { await Promise.race([
                     Model.init(),
                     new Promise((resolve, reject) =>
-                        setTimeout(() => reject(new Error(`index build timed out after ${READY_TIMEOUT_MS}ms`)), READY_TIMEOUT_MS)
+                        timer = setTimeout(() => reject(new Error(`index build timed out after ${READY_TIMEOUT_MS}ms`)), READY_TIMEOUT_MS)
                     ),
-                ]);
+                ]); } finally { clearTimeout(timer); }
                 built.push(entry.why);
             } catch (error) {
                 console.error("IndexReadiness:ensureCriticalIndexes: failed for", entry.why, "—", error.message);

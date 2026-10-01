@@ -78,3 +78,64 @@ describe("the vendored widget build cannot go stale", () => {
         }
     });
 });
+
+describe("widget assets are compressed and cached for how they are used", () => {
+    // fetch decodes br and gzip transparently but still reports the header,
+    // so these assert on what the server chose, not on raw bytes.
+    const frameRefs = async () => {
+        const html = await (await fetch(BASE_URL + "/widget/frame/?pk=x")).text();
+        return [...html.matchAll(/\.\/(frame\.[0-9a-f]{10}\.(?:js|css))/g)].map((match) => match[1]);
+    };
+
+    test("the frame's fingerprinted assets are immutable and brotli-encoded", async () => {
+        const refs = await frameRefs();
+        assert.equal(refs.length, 2, "index.html should reference one fingerprinted script and one stylesheet");
+        for (const ref of refs) {
+            const res = await fetch(`${BASE_URL}/widget/frame/${ref}`, { headers: { "accept-encoding": "br, gzip" } });
+            assert.equal(res.status, 200, ref);
+            assert.equal(res.headers.get("content-encoding"), "br", ref);
+            assert.match(res.headers.get("cache-control") || "", /max-age=31536000.*immutable/, ref);
+            assert.match(res.headers.get("vary") || "", /accept-encoding/i, ref);
+            assert.match(res.headers.get("content-type") || "", ref.endsWith(".js") ? /javascript/ : /css/, ref);
+            assert.ok((await res.text()).length > 1000, `${ref} decoded to almost nothing`);
+        }
+    });
+
+    test("a client without brotli gets gzip, and one without either gets plain bytes", async () => {
+        const [script] = (await frameRefs()).filter((ref) => ref.endsWith(".js"));
+        const gz = await fetch(`${BASE_URL}/widget/frame/${script}`, { headers: { "accept-encoding": "gzip" } });
+        assert.equal(gz.headers.get("content-encoding"), "gzip");
+        const plain = await fetch(`${BASE_URL}/widget/frame/${script}`, { headers: { "accept-encoding": "identity" } });
+        assert.equal(plain.headers.get("content-encoding"), null);
+        assert.equal((await gz.text()).length, (await plain.text()).length);
+    });
+
+    test("widget.js and the frame page keep a short cache that revalidates in the background", async () => {
+        for (const url of ["/widget.js", "/widget/frame/?pk=x"]) {
+            const res = await fetch(BASE_URL + url, { headers: { "accept-encoding": "br" } });
+            assert.equal(res.status, 200, url);
+            assert.match(res.headers.get("cache-control") || "", /max-age=300.*stale-while-revalidate/, url);
+            assert.doesNotMatch(res.headers.get("cache-control") || "", /immutable/, url);
+        }
+    });
+
+    test("a fingerprint from an older deploy falls back to the current build, uncached", async () => {
+        const res = await fetch(`${BASE_URL}/widget/frame/frame.0000000000.js`);
+        assert.equal(res.status, 200);
+        assert.equal(res.headers.get("cache-control"), "no-cache");
+        assert.match(res.headers.get("content-type") || "", /javascript/);
+    });
+
+    test("paths outside the frame directory are not served", async () => {
+        for (const probe of ["/widget/frame/..%2f..%2fserver.js", "/widget/frame/%2e%2e/%2e%2e/package.json"]) {
+            const res = await fetch(BASE_URL + probe);
+            const body = await res.text();
+            assert.ok(res.status !== 200 || !/require\(|"dependencies"/.test(body), `${probe} leaked a file`);
+        }
+    });
+
+    test("/widget/frame without a trailing slash still redirects to the page", async () => {
+        const res = await fetch(BASE_URL + "/widget/frame", { redirect: "manual" });
+        assert.ok([301, 302, 303, 307, 308].includes(res.status), `status ${res.status}`);
+    });
+});

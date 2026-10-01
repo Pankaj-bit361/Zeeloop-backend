@@ -41,6 +41,7 @@ const opsRoutes = require("./routes/opsRoutes");
 const expansionRoutes = require("./routes/expansionRoutes");
 const onboardingRoutes = require("./routes/onboardingRoutes");
 const publicApiRoutes = require("./routes/publicApiRoutes");
+const mcpRoutes = require("./routes/mcpRoutes");
 const inboundEmailRoutes = require("./routes/inboundEmailRoutes");
 const attributionFunctions = require("./functions/analytics/attributionFunctions");
 const subscriptionFunctions = require("./functions/billing/subscriptionFunctions");
@@ -64,6 +65,8 @@ const logger = require("./functions/utilFunctions/logger");
 logger.install({ format: config.LOG_FORMAT, level: config.LOG_LEVEL });
 
 const app = express();
+app.set("trust proxy", config.TRUST_PROXY);
+let indexesReady = false;
 
 // First in the chain: everything downstream, including the error handler, needs
 // the request id to already exist.
@@ -74,14 +77,26 @@ app.use(helmet());
 // produces different bytes — different key order, different whitespace — so a
 // signature checked against it never matches. Capped so a large upload cannot
 // be retained twice.
-app.use(
-    express.json({
-        limit: config.JSON_BODY_LIMIT,
-        verify: (req, res, buf) => {
-            if (buf && buf.length && buf.length <= 1_000_000) req.rawBody = buf;
-        },
-    })
-);
+const jsonBody = express.json({
+    limit: config.JSON_BODY_LIMIT,
+    verify: (req, res, buf) => {
+        if (buf && buf.length && buf.length <= 1_000_000) req.rawBody = buf;
+    },
+});
+const isMcpPath = req => /^\/mcp\/?$/i.test(req.path);
+// The SDK's Node adapter receives req.body, so its stream-size limit cannot
+// bound JSON already parsed by Express. Enforce the smaller MCP limit here,
+// including whitespace and decoded compressed bodies.
+const mcpJsonBody = express.json({ limit: 65_536 });
+app.use((req, res, next) => (isMcpPath(req) ? mcpJsonBody : jsonBody)(req, res, next));
+app.use((error, req, res, next) => {
+    if (!isMcpPath(req) || ![400, 413, 415].includes(error.status)) return next(error);
+    res.setHeader("Cache-Control", "private, no-store");
+    const message = error.status === 413 ? "MCP request exceeds the 64 KiB limit"
+        : error.status === 415 ? "Unsupported MCP request encoding" : "Invalid JSON request";
+    return res.status(error.status).json({ jsonrpc: "2.0", id: null,
+        error: { code: error.status === 400 ? -32700 : -32600, message } });
+});
 app.use(cookieParser());
 
 /* §8.6 — reject MongoDB operator syntax in anything a client sends, before it
@@ -91,7 +106,9 @@ app.use(cookieParser());
    Webhook signature verification is unaffected: it reads req.rawBody, captured
    by the express.json verify hook above, so a rejected body is rejected before
    it matters and a legitimate one still verifies against the original bytes. */
-app.use(sanitize);
+// MCP metadata uses namespaced dotted keys. Its SDK validates the JSON-RPC
+// envelope and every tool's strict schema; no body object reaches MongoDB.
+app.use((req, res, next) => isMcpPath(req) ? next() : sanitize(req, res, next));
 
 // Widget routes are public and CORS * — the whole point is running on customer sites.
 const widgetCors = cors({ origin: "*" });
@@ -109,6 +126,19 @@ const dashboardCors = cors({ origin: config.CORS_DASHBOARD_ORIGINS, credentials:
 // service and leave nothing serving at all.
 app.get("/", (req, res) => res.status(200).json({ success: true, status: "ok" }));
 app.get("/health", (req, res) => res.status(200).json({ success: true, status: "ok" }));
+app.get("/ready", (req, res) => {
+    const ready = indexesReady && mongoose.connection.readyState === 1;
+    res.status(ready ? 200 : 503).json({ success: ready, status: ready ? "ready" : "starting" });
+});
+// Readiness also gates writes when a load balancer still routes to a booting
+// instance. The uniqueness constraints must exist before accepting traffic.
+app.use((req, res, next) => {
+    if (/^\/(api|v1|mcp|webhooks|inbound|auth)(\/|$)/.test(req.path) && (!indexesReady || mongoose.connection.readyState !== 1)) {
+        res.setHeader("Retry-After", "5");
+        return res.status(503).json({ success: false, error: "Service is starting. Please retry shortly." });
+    }
+    next();
+});
 
 // Deep health is a different question from liveness: "can this deployment
 // actually do its job". For humans and uptime monitors, never for the load
@@ -167,8 +197,7 @@ app.use("/inbound", widgetCors, inboundEmailRoutes);
 
 // Rate limiting and the origin allowlist sit on the widget mount rather than
 // inside the router, so a route added later is covered by default instead of by
-// remembering. Order matters: rate limiting first, because it is in-memory and
-// free, and the allowlist check costs a database read.
+// remembering. Shared rate limiting runs before the workspace policy lookup.
 app.use("/api/widget", widgetCors, widgetRateLimit, enforceOriginAllowlist, widgetRoutes);
 
 // ── Widget static assets ─────────────────────────────────────
@@ -211,8 +240,8 @@ const requireWidgetBuild = (req, res, next) => {
     if (widgetReady) return next();
     return res.status(503).json({ success: false, error: "The widget build is not deployed on this server" });
 };
-// §8.4 — the frame's own CSP. `frame-ancestors *` is required (the whole point
-// is embedding on customer sites) but everything else is locked down, because
+// The frame's CSP permits customer embedding unless the workspace enables an
+// allowlist. Everything else is locked down, because
 // the frame renders content that originates with the customer's own knowledge
 // base and end users' messages.
 //
@@ -250,6 +279,30 @@ const embeddable = (req, res, next) => {
     next();
 };
 
+// Origin on an iframe's API requests identifies this API, not its parent site.
+// Only the browser's frame-ancestors check verifies every actual ancestor.
+const widgetFramePolicy = async (req, res, next) => {
+    if (!["/", "/index.html"].includes(req.path) || typeof req.query.pk !== "string") return next();
+    try {
+        const org = await require("./models/org/org").findOne({ publicKey: req.query.pk }).select("widget").lean();
+        if (org) {
+            res.locals.widgetFramePolicy = true;
+            if (org.widget?.enforceOriginAllowlist) {
+                const security = require("./functions/security/securityFunctions");
+                const origins = (org.widget.allowedOrigins || []).map(value => security.normaliseOrigin(value)).filter(Boolean);
+                if (req.query.preview === "1") {
+                    origins.push(...config.CORS_DASHBOARD_ORIGINS.map(value => security.normaliseOrigin(value)).filter(Boolean));
+                }
+                res.setHeader("Content-Security-Policy", FRAME_CSP.replace("frame-ancestors *", `frame-ancestors ${origins.length ? origins.join(" ") : "'none'"}`));
+            }
+        }
+        next();
+    } catch (error) {
+        generalFunctions.captureException(error);
+        res.status(503).json({ success: false, error: "Widget policy is temporarily unavailable" });
+    }
+};
+
 // The demo, compare and theme-lab pages are stand-ins for a CUSTOMER'S site,
 // not part of the widget. They carry the inline snippet a customer pastes, so
 // the frame's `script-src 'self'` would block exactly the thing they exist to
@@ -260,9 +313,77 @@ const demoPage = (req, res, next) => {
     res.setHeader("Cross-Origin-Resource-Policy", "cross-origin");
     next();
 };
-app.get("/widget.js", widgetCors, embeddable, requireWidgetBuild, (req, res) => {
-    res.sendFile(path.join(widgetDist, "widget.js"), { maxAge: "5m" });
-});
+/* Widget assets: compressed, and cached for how each file is actually used.
+
+   Measured before this (Sep 2026): production sent frame.js and frame.css
+   uncompressed (38 KB and 41 KB, against 13 KB and 9 KB gzipped) with a
+   five-minute cache, so every returning visitor paid a full round trip per
+   file after five minutes.
+
+   - frame.<hash>.js/.css are immutable. The build fingerprints them, so a new
+     deploy is a new URL and a year-long cache is safe.
+   - index.html and widget.js keep a short cache (their URLs never change —
+     widget.js is in every customer's snippet) with stale-while-revalidate, so
+     a return visit paints from cache and refreshes in the background.
+   - The build writes .br and .gz siblings; the browser's Accept-Encoding picks
+     one. nginx passes a Content-Encoding it did not add straight through.
+   - A page holding an older index.html can ask for a fingerprint this deploy
+     no longer has. It gets the current build under no-cache, not a 404 that
+     leaves the messenger blank. */
+const WIDGET_TYPES = {
+    ".js": "application/javascript; charset=utf-8",
+    ".css": "text/css; charset=utf-8",
+    ".html": "text/html; charset=utf-8",
+};
+const HASHED_FRAME_ASSET = /^\/frame\.[0-9a-f]{10}\.(js|css)$/;
+function widgetCacheControl(rel) {
+    if (HASHED_FRAME_ASSET.test(rel)) return "public, max-age=31536000, immutable";
+    return "public, max-age=300, stale-while-revalidate=86400";
+}
+function sendWidgetAsset(req, res, next, root, rel) {
+    const fs = require("fs");
+    const resolvedRoot = path.resolve(root);
+    let file = path.resolve(resolvedRoot, `.${rel}`);
+    if (!file.startsWith(resolvedRoot + path.sep)) return next();
+    let cacheControl = widgetCacheControl(rel);
+    if (res.locals.widgetFramePolicy && rel === "/index.html") cacheControl = "private, no-store";
+    if (!fs.existsSync(file) && HASHED_FRAME_ASSET.test(rel)) {
+        file = path.join(resolvedRoot, `frame.${rel.match(HASHED_FRAME_ASSET)[1]}`);
+        cacheControl = "no-cache";
+    }
+    let stat;
+    try {
+        stat = fs.statSync(file);
+    } catch (error) {
+        return next();
+    }
+    const type = WIDGET_TYPES[path.extname(file)];
+    if (!stat.isFile() || !type) return next();
+
+    const accept = String(req.headers["accept-encoding"] || "");
+    let chosen = file;
+    let encoding = null;
+    if (/\bbr\b/.test(accept) && fs.existsSync(`${file}.br`)) {
+        chosen = `${file}.br`;
+        encoding = "br";
+    } else if (/\bgzip\b/.test(accept) && fs.existsSync(`${file}.gz`)) {
+        chosen = `${file}.gz`;
+        encoding = "gzip";
+    }
+    // Set before sendFile: it keeps a Content-Type that is already present,
+    // which matters because the file on disk may be frame.js.br.
+    res.setHeader("Content-Type", type);
+    res.setHeader("Cache-Control", cacheControl);
+    res.setHeader("Vary", "Accept-Encoding");
+    if (encoding) res.setHeader("Content-Encoding", encoding);
+    return res.sendFile(chosen, { cacheControl: false, dotfiles: "deny" }, (error) => {
+        if (error && !res.headersSent) next(error);
+    });
+}
+
+app.get("/widget.js", widgetCors, embeddable, requireWidgetBuild, (req, res, next) =>
+    sendWidgetAsset(req, res, next, widgetDist, "/widget.js")
+);
 app.get("/widget/demo", demoPage, (req, res) => {
     res.sendFile(path.join(widgetDist, "demo.html"));
 });
@@ -280,7 +401,29 @@ app.get("/widget/theme-lab", demoPage, (req, res) => {
 app.get("/widget/theme-lab.js", demoPage, (req, res) => {
     res.sendFile(path.join(widgetDist, "theme-lab.js"));
 });
-app.use("/widget/frame", embeddable, requireWidgetBuild, express.static(path.join(widgetDist, "frame"), { maxAge: "5m" }));
+app.use(
+    "/widget/frame",
+    embeddable,
+    requireWidgetBuild,
+    widgetFramePolicy,
+    (req, res, next) => {
+        if (req.method !== "GET" && req.method !== "HEAD") return next();
+        let rel;
+        try {
+            rel = decodeURIComponent(req.path);
+        } catch (error) {
+            return next();
+        }
+        if (rel === "/") {
+            // /widget/frame without the slash must redirect first, or the
+            // page's relative ./frame.<hash>.js resolves one directory too high.
+            if (!req.originalUrl.split("?")[0].endsWith("/")) return next();
+            rel = "/index.html";
+        }
+        return sendWidgetAsset(req, res, next, path.join(widgetDist, "frame"), rel);
+    },
+    express.static(path.join(widgetDist, "frame"), { maxAge: "5m" })
+);
 app.use("/api/auth", dashboardCors, authRoutes);
 app.use("/api/knowledge", dashboardCors, knowledgeRoutes);
 app.use("/api/org", dashboardCors, actionRoutes);
@@ -298,6 +441,8 @@ app.use("/api/org", dashboardCors, widgetConfigRoutes);
 app.use("/api/org", dashboardCors, opsRoutes);
 app.use("/api/org", dashboardCors, expansionRoutes);
 app.use("/api/org", dashboardCors, onboardingRoutes);
+app.use("/api/org", dashboardCors, mcpRoutes.management);
+app.use("/mcp", mcpRoutes.endpoint);
 app.use("/api/analytics", dashboardCors, analyticsRoutes);
 
 // §5.6 — the customer-facing REST API. Deliberately NOT under /api/org: it is
@@ -329,7 +474,9 @@ async function connectWithRetry() {
         // on a fresh database there is a window at boot where the constraint
         // does not yet exist and a duplicate insert succeeds. Awaited here so
         // that window closes before traffic arrives.
-        await indexReadiness.ensureCriticalIndexes();
+        const readiness = await indexReadiness.ensureCriticalIndexes();
+        if (!readiness.success) throw new Error("Critical uniqueness constraints are not ready");
+        indexesReady = true;
         // Loud, not fatal. Without the Atlas search indexes retrieval returns
         // nothing and the agent abstains from every question — indistinguishable
         // from an empty knowledge base unless someone says so at boot (§8.3).
@@ -353,38 +500,38 @@ httpServer.listen(config.PORT, () => {
 
 connectWithRetry();
 
+// Run cron on one designated scheduler instance. API replicas can opt out;
+// awaiting each job also lets node-cron prevent overlap within that instance.
+function scheduleJob(name, expression, task) {
+    if (!config.SCHEDULED_JOBS_ENABLED) return;
+    cron.schedule(expression, async () => {
+        if (!indexesReady || mongoose.connection.readyState !== 1) return;
+        try { await task(); }
+        catch (error) { console.error(`Scheduled job ${name} failed`, error.message); generalFunctions.captureException(error); }
+    }, { name, noOverlap: true, timezone: "UTC" });
+}
 // Autonomous resolution is computed by cron, never at write time (§11).
-cron.schedule(config.RESOLUTION_CRON, () => {
-    analyticsFunctions.computeResolutions();
-});
+scheduleJob("resolutions", config.RESOLUTION_CRON, () => analyticsFunctions.computeResolutions());
 
 // Retention purge (§8.1). Disabled unless RETENTION_DAYS is set — a workspace
 // that has not chosen a window keeps its data, and an unset variable must never
 // read as "delete everything".
 if (config.RETENTION_DAYS > 0) {
-    cron.schedule(config.RETENTION_CRON, () => {
-        complianceFunctions.purgeExpired();
-    });
+    scheduleJob("retention", config.RETENTION_CRON, () => complianceFunctions.purgeExpired());
     console.log(`Server: retention purge scheduled (${config.RETENTION_DAYS} days, ${config.RETENTION_CRON})`);
 }
 
 // Attribution counters (§2.5). Computed from TurnTrace rather than incremented
 // at write time — see attributionFunctions for why.
-cron.schedule(config.ATTRIBUTION_CRON, () => {
-    attributionFunctions.computeAttribution({});
-});
+scheduleJob("attribution", config.ATTRIBUTION_CRON, () => attributionFunctions.computeAttribution({}));
 
 // Answer quality grading (§3.4). Runs on 100% of conversations, unlike thumbs
 // feedback which arrives on under 5%.
-cron.schedule(config.QUALITY_CRON, () => {
-    qualityFunctions.gradePending({});
-});
+scheduleJob("quality", config.QUALITY_CRON, () => qualityFunctions.gradePending({}));
 
 // Trial notices, dunning and suspension (§0.5). Idempotent end to end, which is
 // what makes it safe on a schedule that will occasionally fire twice.
-cron.schedule(config.LIFECYCLE_CRON, () => {
-    subscriptionFunctions.runLifecycleSweep({});
-});
+scheduleJob("lifecycle", config.LIFECYCLE_CRON, () => subscriptionFunctions.runLifecycleSweep({}));
 
 // §1.3 — the crawl worker. Crawling used to run inline on the request thread,
 // which blocked it and could not survive a deploy. This is an in-process poller
@@ -397,7 +544,5 @@ if (config.CRAWL_WORKER_ENABLED) {
 
     // §1.4 — scheduled re-syncs. Queued, never crawled inline, so a hundred due
     // sources do not all run at once on one tick.
-    cron.schedule("*/15 * * * *", () => {
-        knowledgeFunctions.enqueueScheduledSyncs();
-    });
+    scheduleJob("source-syncs", "*/15 * * * *", () => knowledgeFunctions.enqueueScheduledSyncs());
 }

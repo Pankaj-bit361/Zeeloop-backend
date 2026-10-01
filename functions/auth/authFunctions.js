@@ -12,6 +12,7 @@ const geoFunctions = require("../utilFunctions/geoFunctions");
 const sessionFunctions = require("../utilFunctions/sessionFunctions");
 const attributeFunctions = require("../config/attributeFunctions");
 const subscriptionFunctions = require("../billing/subscriptionFunctions");
+const emailFunctions = require("../email/emailFunctions");
 
 const GENERIC_ERROR = "Internal server error, please contact support";
 // One message for "no such account" and "wrong password" alike. Two distinct
@@ -70,16 +71,19 @@ class AuthFunctions {
                 return { status: 403, json: { success: false, error: "Signups are currently closed" } };
             }
             const normalized = String(email || "").trim().toLowerCase();
-            if (!normalized.includes("@") || normalized.length < 5) {
+            if (normalized.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalized)) {
                 return { status: 400, json: { success: false, error: "Enter a valid email address" } };
             }
-            if (!password || String(password).length < MIN_PASSWORD_LENGTH) {
+            if (typeof password !== "string" || password.length < MIN_PASSWORD_LENGTH || password.length > 256) {
                 return {
                     status: 400,
                     json: { success: false, error: `Password must be at least ${MIN_PASSWORD_LENGTH} characters` },
                 };
             }
             const displayName = String(name || "").trim() || normalized.split("@")[0];
+            if (!config.EMAIL_API_KEY && !config.ALLOW_DEV_AUTH_LINKS) {
+                return { status: 503, json: { success: false, error: "Email sign-up is temporarily unavailable. Please try again later." } };
+            }
 
             /* §8.6 — ANY existing account is a conflict. No exceptions.
 
@@ -107,12 +111,13 @@ class AuthFunctions {
                 accountId: generalFunctions.generateId(IdPrefix.ACCOUNT),
                 email: normalized,
                 name: displayName,
-                passwordHash: sessionFunctions.hashPassword(String(password)),
+                passwordHash: await sessionFunctions.hashPasswordAsync(String(password)),
                 passwordSetAt: new Date(),
                 providers: [AuthProvider.PASSWORD],
                 lastLoginAt: new Date(),
             });
-            return { status: 201, json: { success: true, data: { accountId: account.accountId } } };
+            const verification = await this.sendVerification({ account });
+            return { status: 201, json: { success: true, data: { accountId: account.accountId, sessionVersion: account.sessionVersion, ...verification.json.data } } };
         } catch (error) {
             console.error("AuthFunctions:signup: Catch block");
             console.error(error);
@@ -126,19 +131,19 @@ class AuthFunctions {
         console.log("AuthFunctions:login: email:", email);
         try {
             const normalized = String(email || "").trim().toLowerCase();
-            if (!normalized || !password) {
+            if (!normalized || typeof password !== "string" || !password || password.length > 256) {
                 return { status: 400, json: { success: false, error: "Enter your email and password" } };
             }
 
             const account = await Account.findOne({ email: normalized });
             // verifyPassword tolerates a null hash, so an OAuth-only account
             // takes the same path and the same generic failure as a bad password.
-            if (!account || !sessionFunctions.verifyPassword(String(password), account.passwordHash)) {
+            if (!account || !(await sessionFunctions.verifyPasswordAsync(String(password), account.passwordHash))) {
                 return { status: 401, json: { success: false, error: BAD_CREDENTIALS } };
             }
 
             await Account.updateOne({ accountId: account.accountId }, { lastLoginAt: new Date() });
-            return { status: 200, json: { success: true, data: { accountId: account.accountId } } };
+            return { status: 200, json: { success: true, data: { accountId: account.accountId, sessionVersion: account.sessionVersion } } };
         } catch (error) {
             console.error("AuthFunctions:login: Catch block");
             console.error(error);
@@ -148,8 +153,11 @@ class AuthFunctions {
     }
 
     // POST /api/auth/logout — the cookie clearing itself is the route's job.
-    async logout() {
+    async logout({ session } = {}) {
         console.log("AuthFunctions:logout: run");
+        if (session) {
+            await Account.updateOne({ accountId: session.sub, ...this._sessionVersionFilter(session.ver) }, { $inc: { sessionVersion: 1 } });
+        }
         return { status: 200, json: { success: true, data: { ok: true } } };
     }
 
@@ -219,9 +227,16 @@ class AuthFunctions {
                 return { status: 400, json: { success: false, error: "Invalid request. Please pass orgId" } };
             }
 
+            if (!account.emailVerifiedAt) {
+                return { status: 403, json: { success: false, error: "Verify your email before opening a workspace", reason: "EMAIL_VERIFICATION_REQUIRED" } };
+            }
+
             const member = await Member.findOne({ orgId, email: account.email });
             if (!member) {
                 return { status: 403, json: { success: false, error: "You don't have access to that workspace" } };
+            }
+            if (![MemberStatus.ACTIVE, MemberStatus.INVITED].includes(member.status)) {
+                return { status: 403, json: { success: false, error: "Your workspace access is suspended" } };
             }
             const org = await Org.findOne({ orgId }).lean();
             if (!org) {
@@ -241,7 +256,7 @@ class AuthFunctions {
                 }
             );
 
-            const token = jwt.sign({ orgId: org.orgId, email: account.email }, config.JWT_SECRET, { expiresIn: "7d" });
+            const token = jwt.sign({ orgId: org.orgId, email: account.email, accountId: account.accountId, sessionVersion: account.sessionVersion || 0 }, config.JWT_SECRET, { expiresIn: "1h" });
             return {
                 status: 200,
                 json: {
@@ -275,6 +290,9 @@ class AuthFunctions {
             const orgName = String(name || "").trim();
             if (!orgName) {
                 return { status: 400, json: { success: false, error: "Give your workspace a name" } };
+            }
+            if (!account.emailVerifiedAt) {
+                return { status: 403, json: { success: false, error: "Verify your email before creating a workspace", reason: "EMAIL_VERIFICATION_REQUIRED" } };
             }
 
             const orgId = generalFunctions.generateId(IdPrefix.ORG);
@@ -331,62 +349,69 @@ class AuthFunctions {
         }
     }
 
-    // POST /api/auth/forgot-password
-    //
-    // Always answers 200, whether or not the address exists — the response is
-    // the same oracle the login form refuses to be. There is no mail provider
-    // wired up yet, so outside production the reset link comes back in the body
-    // and is logged; in production it is withheld and the flow is a no-op until
-    // delivery exists. That is stated in the response rather than pretended away.
+    // Session-bound resend: it can only send to this account's own address.
+    async sendVerification({ account }) {
+        if (!account) return { status: 401, json: { success: false, error: "Not signed in" } };
+        if (account.emailVerifiedAt) return { status: 200, json: { success: true, data: { ok: true, verified: true } } };
+        if (!config.EMAIL_API_KEY && !config.ALLOW_DEV_AUTH_LINKS) {
+            return { status: 503, json: { success: false, error: "Email delivery is temporarily unavailable" } };
+        }
+        const url = await this._createAccountLink({ account, purpose: TokenPurpose.EMAIL_VERIFY, path: "verify-email" });
+        const delivery = config.EMAIL_API_KEY
+            ? await emailFunctions.sendAccountLink({ to: account.email, url, purpose: TokenPurpose.EMAIL_VERIFY })
+            : { success: true };
+        return { status: 200, json: { success: true, data: {
+            ok: true, verificationRequired: true, verificationSent: delivery.success,
+            verificationUrl: config.ALLOW_DEV_AUTH_LINKS ? url : null,
+        } } };
+    }
+
+    async verifyEmail({ token, account }) {
+        if (!token || typeof token !== "string") return { status: 400, json: { success: false, error: "Invalid verification link" } };
+        // A verification link must not switch the browser into another account.
+        if (!account) return { status: 401, json: { success: false, error: "Sign in to verify your email" } };
+        const consumed = await this._consumeToken({ token, purpose: TokenPurpose.EMAIL_VERIFY, accountId: account.accountId });
+        if (!consumed.success) return { status: 400, json: { success: false, error: "That verification link has expired or already been used" } };
+        await Account.updateOne({ accountId: account.accountId }, { $set: { emailVerifiedAt: new Date() } });
+        return { status: 200, json: { success: true, data: { ok: true } } };
+    }
+
+    // Known and unknown addresses get the same response. Development link
+    // exposure is explicit and can never be enabled in production.
     async forgotPassword({ email }) {
-        console.log("AuthFunctions:forgotPassword: email:", email);
+        if (!config.EMAIL_API_KEY && !config.ALLOW_DEV_AUTH_LINKS) {
+            return { status: 503, json: { success: false, error: "Password recovery is temporarily unavailable. Please try again later." } };
+        }
+        const answer = { status: 200, json: { success: true, data: {
+            ok: true, resetUrl: null, delivery: config.ALLOW_DEV_AUTH_LINKS ? "dev-response" : "email",
+        } } };
         try {
-            const normalized = String(email || "").trim().toLowerCase();
-            const isProduction = process.env.NODE_ENV === "production";
-            const answer = {
-                status: 200,
-                json: {
-                    success: true,
-                    data: {
-                        ok: true,
-                        // Null in production. Never a hint about whether the
-                        // account exists — an unknown address gets this same
-                        // shape with the same null.
-                        resetUrl: null,
-                        delivery: isProduction ? "email" : "dev-response",
-                    },
-                },
-            };
-
-            const account = await Account.findOne({ email: normalized });
+            const account = await Account.findOne({ email: String(email || "").trim().toLowerCase() });
             if (!account) return answer;
-
-            const token = sessionFunctions.randomToken();
-            await AuthToken.create({
-                tokenId: generalFunctions.generateId(IdPrefix.AUTH_TOKEN),
-                accountId: account.accountId,
-                token,
-                purpose: TokenPurpose.PASSWORD_RESET,
-                expiresAt: new Date(Date.now() + RESET_TTL_MS),
-            });
-
-            const resetUrl = `${config.APP_URL}/reset-password?token=${token}`;
-            if (isProduction) {
-                // TODO: hand to a mail provider. Until then a production reset
-                // genuinely cannot be delivered, and saying so in the log beats
-                // a user waiting for an email that was never sent.
-                console.log("AuthFunctions:forgotPassword: no mail provider configured, reset link not delivered");
-                return answer;
+            const url = await this._createAccountLink({ account, purpose: TokenPurpose.PASSWORD_RESET, path: "reset-password" });
+            if (config.EMAIL_API_KEY) {
+                const delivery = await emailFunctions.sendAccountLink({ to: account.email, url, purpose: TokenPurpose.PASSWORD_RESET });
+                if (!delivery.success) console.error("AuthFunctions:forgotPassword: recovery delivery failed");
             }
-            console.log("AuthFunctions:forgotPassword: dev reset link:", resetUrl);
-            answer.json.data.resetUrl = resetUrl;
+            if (config.ALLOW_DEV_AUTH_LINKS) answer.json.data.resetUrl = url;
             return answer;
         } catch (error) {
-            console.error("AuthFunctions:forgotPassword: Catch block");
-            console.error(error);
+            // Do not turn a database/provider failure for a known address into
+            // an account enumeration signal.
             generalFunctions.captureException(error);
-            return { status: 500, json: { success: false, error: GENERIC_ERROR } };
+            return answer;
         }
+    }
+
+    async _createAccountLink({ account, purpose, path }) {
+        const token = sessionFunctions.randomToken();
+        await AuthToken.create({
+            tokenId: generalFunctions.generateId(IdPrefix.AUTH_TOKEN), accountId: account.accountId,
+            sessionVersion: account.sessionVersion || 0,
+            token: crypto.createHash("sha256").update(token).digest("hex"), purpose,
+            expiresAt: new Date(Date.now() + RESET_TTL_MS),
+        });
+        return `${config.APP_URL}/${path}?token=${encodeURIComponent(token)}`;
     }
 
     // POST /api/auth/reset-password
@@ -396,7 +421,7 @@ class AuthFunctions {
             if (!token) {
                 return { status: 400, json: { success: false, error: "Invalid request. Please pass token" } };
             }
-            if (!password || String(password).length < MIN_PASSWORD_LENGTH) {
+            if (typeof password !== "string" || password.length < MIN_PASSWORD_LENGTH || password.length > 256) {
                 return {
                     status: 400,
                     json: { success: false, error: `Password must be at least ${MIN_PASSWORD_LENGTH} characters` },
@@ -412,15 +437,16 @@ class AuthFunctions {
             if (!account) {
                 return { status: 404, json: { success: false, error: "Account not found" } };
             }
-            account.passwordHash = sessionFunctions.hashPassword(String(password));
-            account.passwordSetAt = new Date();
-            account.lastLoginAt = new Date();
-            if (!account.providers.includes(AuthProvider.PASSWORD)) {
-                account.providers.push(AuthProvider.PASSWORD);
-            }
-            await account.save();
+            const version = consumed.sessionVersion ?? (account.sessionVersion || 0);
+            const changed = await Account.findOneAndUpdate({ accountId: account.accountId, ...this._sessionVersionFilter(version) }, {
+                $set: { passwordHash: await sessionFunctions.hashPasswordAsync(password), emailVerifiedAt: account.emailVerifiedAt || new Date(),
+                    passwordSetAt: new Date(), lastLoginAt: new Date() },
+                $inc: { sessionVersion: 1 }, $addToSet: { providers: AuthProvider.PASSWORD },
+            }, { new: true });
+            if (!changed) return { status: 400, json: { success: false, error: "That reset link is no longer valid. Request a fresh link." } };
 
-            return { status: 200, json: { success: true, data: { accountId: account.accountId } } };
+            await AuthToken.updateMany({ accountId: account.accountId, purpose: TokenPurpose.PASSWORD_RESET, usedAt: null }, { $set: { usedAt: new Date() } });
+            return { status: 200, json: { success: true, data: { accountId: changed.accountId, sessionVersion: changed.sessionVersion } } };
         } catch (error) {
             console.error("AuthFunctions:resetPassword: Catch block");
             console.error(error);
@@ -502,7 +528,7 @@ class AuthFunctions {
             });
             if (!resolved.success) return fail(resolved.reason);
 
-            return { redirectUrl: `${config.APP_URL}/app`, accountId: resolved.account.accountId };
+            return { redirectUrl: `${config.APP_URL}/app`, accountId: resolved.account.accountId, sessionVersion: resolved.account.sessionVersion || 0 };
         } catch (error) {
             console.error("AuthFunctions:googleCallback: Catch block");
             console.error(error);
@@ -586,7 +612,7 @@ class AuthFunctions {
             });
             if (!resolved.success) return fail(resolved.reason);
 
-            return { redirectUrl: `${config.APP_URL}/app`, accountId: resolved.account.accountId };
+            return { redirectUrl: `${config.APP_URL}/app`, accountId: resolved.account.accountId, sessionVersion: resolved.account.sessionVersion || 0 };
         } catch (error) {
             console.error("AuthFunctions:githubCallback: Catch block");
             console.error(error);
@@ -629,7 +655,7 @@ class AuthFunctions {
                 return { status: 404, json: { success: false, error: "Org not found. Run the seed script first: npm run seed" } };
             }
 
-            const token = jwt.sign({ orgId: org.orgId, email: org.ownerEmail }, config.JWT_SECRET, { expiresIn: "7d" });
+            const token = jwt.sign({ orgId: org.orgId, email: org.ownerEmail, dev: true }, config.JWT_SECRET, { expiresIn: "7d" });
             return {
                 status: 200,
                 json: { success: true, data: { token, orgId: org.orgId, orgName: org.name, publicKey: org.publicKey } },
@@ -643,6 +669,9 @@ class AuthFunctions {
     }
 
     /* ──────────────────────── private ──────────────────────── */
+    _sessionVersionFilter(version) {
+        return version === 0 ? { $or: [{ sessionVersion: 0 }, { sessionVersion: { $exists: false } }] } : { sessionVersion: version };
+    }
 
     // Resolves an OAuth identity to an account, creating one if the address is
     // new. Returns {success} like every other private helper here.
@@ -654,7 +683,19 @@ class AuthFunctions {
             // signed up with a password and never confirmed its email becomes
             // verified here. Left alone if it already was, to keep the original
             // timestamp.
-            if (!existing.emailVerifiedAt) update.$set.emailVerifiedAt = new Date();
+            if (!existing.emailVerifiedAt) {
+                // A stranger may have pre-registered this email. OAuth proves
+                // ownership, but must not make the stranger's password/session
+                // valid for the now-verified account.
+                const claimed = await Account.findOneAndUpdate({ accountId: existing.accountId, emailVerifiedAt: null }, {
+                    $set: { emailVerifiedAt: new Date(), passwordHash: null, passwordSetAt: null, lastLoginAt: new Date() },
+                    $inc: { sessionVersion: 1 }, $addToSet: { providers: provider },
+                }, { new: true });
+                if (claimed) {
+                    await AuthToken.updateMany({ accountId: existing.accountId, usedAt: null }, { $set: { usedAt: new Date() } });
+                    return { success: true, account: claimed };
+                }
+            }
 
             const refreshed = await Account.findOneAndUpdate({ accountId: existing.accountId }, update, { new: true });
             return { success: true, account: refreshed };
@@ -668,8 +709,7 @@ class AuthFunctions {
             accountId: generalFunctions.generateId(IdPrefix.ACCOUNT),
             email,
             name: String(name || "").trim() || email.split("@")[0],
-            // No password, and passwordSetAt stays null so a later password
-            // signup for this address can claim the account (see signup()).
+            // Passwords can be added only through the emailed reset flow.
             passwordHash: null,
             passwordSetAt: null,
             emailVerifiedAt: new Date(),
@@ -691,6 +731,7 @@ class AuthFunctions {
     // happened to be made first.
     async _orgsForAccount(account) {
         try {
+            if (!account.emailVerifiedAt) return { success: true, orgs: [] };
             const seats = await Member.find({ email: account.email }).lean();
             if (!seats.length) return { success: true, orgs: [] };
 
@@ -728,13 +769,14 @@ class AuthFunctions {
 
     // Atomic compare-and-swap: the `usedAt: null` filter is what closes the
     // double-redemption race between two clicks on the same link.
-    async _consumeToken({ token, purpose }) {
+    async _consumeToken({ token, purpose, accountId }) {
+        if (typeof token !== "string" || token.length > 256) return { success: false };
         const row = await AuthToken.findOneAndUpdate(
-            { token, purpose, usedAt: null, expiresAt: { $gt: new Date() } },
+            { token: { $in: [crypto.createHash("sha256").update(token).digest("hex"), token] }, purpose, ...(accountId && { accountId }), usedAt: null, expiresAt: { $gt: new Date() } },
             { $set: { usedAt: new Date() } }
         );
         if (!row) return { success: false };
-        return { success: true, accountId: row.accountId };
+        return { success: true, accountId: row.accountId, sessionVersion: row.sessionVersion };
     }
 
     _publicAccount(account) {

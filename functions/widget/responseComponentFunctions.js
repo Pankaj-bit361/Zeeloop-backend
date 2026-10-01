@@ -1,4 +1,4 @@
-const { ResponseComponentType, ToolCallStatus } = require("../../config/enums");
+const { ResponseComponentType, ToolCallStatus, TurnOutcome } = require("../../config/enums");
 const generalFunctions = require("../utilFunctions/generalFunctions");
 
 // §4.6 — the rich response contract.
@@ -143,6 +143,15 @@ class ResponseComponentFunctions {
                         args: pending.args,
                     })
                 );
+            }
+
+            // Follow-up questions the answer model proposed from the knowledge
+            // it was shown. A choice sends its label as the customer's next
+            // message, which is what tapping one means. Only under a real
+            // answer: a clarification already asks its own question, and an
+            // abstention has nothing to follow up on.
+            if (turn.outcome === TurnOutcome.ANSWERED && Array.isArray(turn.followUps) && turn.followUps.length > 0) {
+                components.push(this.choices({ prompt: "You might also ask", options: turn.followUps }));
             }
 
             // Table rows as cards. Only the rows this turn actually used —

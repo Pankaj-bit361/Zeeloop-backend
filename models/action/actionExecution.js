@@ -5,6 +5,7 @@ const actionExecutionSchema = new mongoose.Schema(
     {
         orgId: { type: String, required: true, index: true },
         executionId: { type: String, required: true, unique: true },
+        idempotencyKey: { type: String },
         actionId: { type: String, required: true, index: true },
         conversationId: { type: String, index: true },
         endUserId: { type: String },
@@ -32,5 +33,7 @@ const actionExecutionSchema = new mongoose.Schema(
         },
     }
 );
+
+actionExecutionSchema.index({ orgId: 1, idempotencyKey: 1 }, { unique: true, partialFilterExpression: { idempotencyKey: { $type: "string" } } });
 
 module.exports = mongoose.model("ActionExecution", actionExecutionSchema);

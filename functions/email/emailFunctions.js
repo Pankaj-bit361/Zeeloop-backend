@@ -20,6 +20,17 @@ const emailTemplates = require("./emailTemplates");
 const MAX_BODY_STORED = 4000;
 
 class EmailFunctions {
+    // Recovery links are credentials: deliver them without putting their body
+    // into a workspace-visible email log.
+    async sendAccountLink({ to, url, purpose }) {
+        if (!config.EMAIL_API_KEY) return { success: false, reason: "NO_PROVIDER" };
+        const verify = purpose === "EMAIL_VERIFY";
+        return this._deliver({
+            to,
+            subject: verify ? "Verify your Zealoop email" : "Reset your Zealoop password",
+            text: `${verify ? "Verify your email address" : "Set a new password"} using this link:\n\n${url}\n\nThis link expires in one hour and can be used once. If you did not request it, you can ignore this email.`,
+        });
+    }
     // ── Public Functions ─────────────────────────────────────────────
 
     // Returns { success, skipped, reason } — never { status, json }. Nothing
@@ -153,6 +164,7 @@ class EmailFunctions {
     async _deliver({ to, subject, text, replyTo, fetchImpl = fetch }) {
         try {
             const response = await fetchImpl(`${config.EMAIL_API_BASE_URL}/emails`, {
+                signal: AbortSignal.timeout(15_000),
                 method: "POST",
                 headers: {
                     Authorization: `Bearer ${config.EMAIL_API_KEY}`,

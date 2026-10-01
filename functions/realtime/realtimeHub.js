@@ -29,6 +29,13 @@
 const { WebSocketServer } = require("ws");
 const Conversation = require("../../models/conversation/conversation");
 const Org = require("../../models/org/org");
+const RealtimeEvent = require("../../models/conversation/realtimeEvent");
+const crypto = require("node:crypto");
+const { clientIp } = require("../../middlewares/rateLimit");
+const emitter = crypto.randomUUID();
+const seenEvents = new Map();
+let brokerTimer = null;
+let brokerBusy = false;
 
 const HEARTBEAT_MS = 25000;
 const MAX_CHANNELS_PER_SOCKET = 20;
@@ -79,18 +86,51 @@ function send(ws, payload) {
 function publish(orgId, conversationId, event) {
     try {
         if (!orgId || !conversationId) return 0;
+        const payload = { ...event, conversationId, at: new Date().toISOString() };
+        // The shared event log carries pushes to sockets on other API instances.
+        // HTTP polling remains the recovery path if a push cannot be persisted.
+        RealtimeEvent.create({ emitter, orgId, conversationId, payload, expiresAt: new Date(Date.now() + 5 * 60_000) })
+            .catch(error => console.error("realtimeHub: broker write failed", error.message));
+        return deliverLocal(orgId, conversationId, payload);
+    } catch (error) {
+        console.error("realtimeHub: publish failed", error.message);
+        return 0;
+    }
+}
+
+function deliverLocal(orgId, conversationId, payload) {
+    try {
         const set = channels.get(channelId(orgId, conversationId));
         if (!set || set.size === 0) return 0;
-        const payload = { ...event, conversationId, at: new Date().toISOString() };
         let delivered = 0;
         for (const ws of set) if (send(ws, payload)) delivered += 1;
-        console.log("realtimeHub:publish:", event.type, conversationId, "→", delivered, "socket(s)");
+        console.log("realtimeHub:publish:", payload.type, conversationId, "→", delivered, "socket(s)");
         return delivered;
     } catch (error) {
         console.log("realtimeHub:publish: Catch block");
         console.log(error);
         return 0;
     }
+}
+
+async function pollBroker() {
+    if (brokerBusy || !channels.size || RealtimeEvent.db.readyState !== 1) return;
+    brokerBusy = true;
+    const cutoff = Date.now() - 60_000;
+    try {
+        for (const [id, timestamp] of seenEvents) if (timestamp < cutoff) seenEvents.delete(id);
+        const rooms = [...channels.keys()].map(key => {
+            const [, orgId, conversationId] = key.split(":");
+            return { orgId, conversationId };
+        });
+        const events = await RealtimeEvent.find({ emitter: { $ne: emitter }, createdAt: { $gte: new Date(cutoff) },
+            _id: { $nin: [...seenEvents.keys()] }, $or: rooms }).sort({ createdAt: 1, _id: 1 }).limit(1000).lean();
+        for (const event of events) {
+            seenEvents.set(String(event._id), Date.now());
+            deliverLocal(event.orgId, event.conversationId, event.payload);
+        }
+    } catch (error) { console.error("realtimeHub: broker read failed", error.message); }
+    finally { brokerBusy = false; }
 }
 
 async function handleSubscribe(ws, ids) {
@@ -106,15 +146,20 @@ async function handleSubscribe(ws, ids) {
         .select("conversationId")
         .lean();
 
-    for (const conversation of found) subscribe(ws, channelId(ws.orgId, conversation.conversationId));
-    send(ws, { type: "subscribed", conversationIds: found.map((c) => c.conversationId) });
+    const accepted = [];
+    for (const conversation of found) {
+        if (ws.channels.size >= MAX_CHANNELS_PER_SOCKET) break;
+        subscribe(ws, channelId(ws.orgId, conversation.conversationId));
+        accepted.push(conversation.conversationId);
+    }
+    send(ws, { type: "subscribed", conversationIds: accepted });
 }
 
 function attach(server) {
     wss = new WebSocketServer({ server, path: "/rtm", maxPayload: 16 * 1024 });
 
     wss.on("connection", async (ws, req) => {
-        const ip = (req.headers["x-forwarded-for"] || "").split(",")[0].trim() || req.socket.remoteAddress || "unknown";
+        const ip = clientIp(req);
         const count = (socketsByIp.get(ip) || 0) + 1;
         if (count > MAX_SOCKETS_PER_IP) {
             send(ws, { type: "error", error: "Too many connections" });
@@ -124,6 +169,14 @@ function attach(server) {
         socketsByIp.set(ip, count);
 
         ws.channels = new Set();
+        ws.ip = ip;
+        ws.on("close", () => {
+            unsubscribeAll(ws);
+            const left = (socketsByIp.get(ip) || 1) - 1;
+            if (left <= 0) socketsByIp.delete(ip);
+            else socketsByIp.set(ip, left);
+        });
+        ws.on("error", error => console.error("realtimeHub:socket error:", error.message));
         ws.isAlive = true;
         ws.on("pong", () => {
             ws.isAlive = true;
@@ -166,14 +219,6 @@ function attach(server) {
             }
         });
 
-        ws.on("close", () => {
-            unsubscribeAll(ws);
-            const left = (socketsByIp.get(ws.ip) || 1) - 1;
-            if (left <= 0) socketsByIp.delete(ws.ip);
-            else socketsByIp.set(ws.ip, left);
-        });
-
-        ws.on("error", (error) => console.log("realtimeHub:socket error:", error.message));
     });
 
     // A dead socket behind a proxy looks open forever. Ping every cycle and
@@ -193,6 +238,8 @@ function attach(server) {
         }
     }, HEARTBEAT_MS);
     heartbeatTimer.unref?.();
+    brokerTimer = setInterval(pollBroker, 500);
+    brokerTimer.unref?.();
 
     console.log("realtimeHub: attached at /rtm");
     return wss;
@@ -208,9 +255,11 @@ function stats() {
 
 async function close() {
     if (heartbeatTimer) clearInterval(heartbeatTimer);
+    if (brokerTimer) clearInterval(brokerTimer);
     if (wss) await new Promise((resolve) => wss.close(resolve));
     channels.clear();
     socketsByIp.clear();
+    seenEvents.clear();
     wss = null;
 }
 

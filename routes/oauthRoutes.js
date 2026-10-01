@@ -43,7 +43,7 @@ router.get("/google/callback", async (req, res) => {
             expectedState: req.cookies && req.cookies[config.OAUTH_STATE_COOKIE],
         });
         sessionFunctions.clearOAuthStateCookie(res);
-        if (result.accountId) sessionFunctions.setSessionCookie(res, result.accountId);
+        if (result.accountId) sessionFunctions.setSessionCookie(res, result.accountId, result.sessionVersion);
         return res.redirect(result.redirectUrl);
     } catch (error) {
         console.error("OAuth router /google/callback catch block");
@@ -74,7 +74,7 @@ router.get("/github/callback", async (req, res) => {
             expectedState: req.cookies && req.cookies[config.OAUTH_STATE_COOKIE],
         });
         sessionFunctions.clearOAuthStateCookie(res);
-        if (result.accountId) sessionFunctions.setSessionCookie(res, result.accountId);
+        if (result.accountId) sessionFunctions.setSessionCookie(res, result.accountId, result.sessionVersion);
         return res.redirect(result.redirectUrl);
     } catch (error) {
         console.error("OAuth router /github/callback catch block");

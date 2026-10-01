@@ -446,7 +446,7 @@ class WizardFunctions {
                     description: "Tell it how to behave and when to bring in a human.",
                     done: guidanceCount > 0,
                     detail: guidanceCount > 0 ? `${guidanceCount} live rules` : null,
-                    href: "/app/settings/agent",
+                    href: "/app/agent",
                 },
                 {
                     key: OnboardingStep.INSTALL,
@@ -454,7 +454,7 @@ class WizardFunctions {
                     description: "One script tag. We'll confirm when we see it.",
                     done: seen.installed,
                     detail: seen.installed ? `Last seen on ${seen.origin || "your site"}` : null,
-                    href: "/app/settings/install",
+                    href: "/app/setup",
                 },
                 {
                     key: OnboardingStep.ACTIONS,
@@ -462,7 +462,7 @@ class WizardFunctions {
                     description: "Let the agent look things up in your systems. Optional, but it is where the product gets good.",
                     done: actionCount > 0,
                     detail: actionCount > 0 ? `${actionCount} live actions` : null,
-                    href: "/app/actions",
+                    href: "/app/apis",
                     optional: true,
                 },
             ];
@@ -476,6 +476,7 @@ class WizardFunctions {
                         steps,
                         completed: steps.filter((step) => step.done).length,
                         total: steps.length,
+                        percent: Math.round(100 * steps.filter((step) => step.done).length / steps.length),
                         // The card hides itself once the required steps are
                         // done, whether or not it was dismissed.
                         show: !(org.onboarding && org.onboarding.dismissed) && required.some((step) => !step.done),

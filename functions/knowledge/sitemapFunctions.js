@@ -145,7 +145,10 @@ class SitemapFunctions {
 
     async _fetchText({ url, fetchImpl }) {
         try {
-            const response = await fetchImpl(url, {
+            const { outboundRequest } = require("../utilFunctions/outboundRequest");
+            const response = await outboundRequest(url, {
+                fetchImpl,
+                maxBytes: MAX_SITEMAP_BYTES,
                 redirect: "follow",
                 headers: { "user-agent": "ZealoopBot/1.0 (+https://zealoop.com/docs/knowledge)" },
             });

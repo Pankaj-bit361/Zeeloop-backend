@@ -1,15 +1,9 @@
 const crypto = require("crypto");
 const Org = require("../../models/org/org");
 const { deriveThemes } = require("../utilFunctions/themeDerivation");
-const KnowledgeSource = require("../../models/knowledge/knowledgeSource");
-const Action = require("../../models/action/action");
-const Table = require("../../models/table/table");
-const Conversation = require("../../models/conversation/conversation");
-const { SourceStatus, TestStatus, EscalationMode, OnboardingStep } = require("../../config/enums");
+const { EscalationMode } = require("../../config/enums");
 const generalFunctions = require("../utilFunctions/generalFunctions");
 
-const DEFAULT_AGENT_NAME = "Zea";
-const DEFAULT_GREETING = "Hi! How can I help?";
 
 class OrgFunctions {
     // GET /api/org/:orgId/settings
@@ -192,73 +186,7 @@ class OrgFunctions {
     // GET /api/org/:orgId/onboarding — the Get Started checklist, derived from
     // real data every time. Nothing about progress is stored.
     async getOnboarding({ orgId }) {
-        console.log("OrgFunctions:getOnboarding: orgId:", orgId);
-        try {
-            if (!orgId) {
-                return { status: 400, json: { success: false, error: "Invalid request. Please pass orgId" } };
-            }
-            const org = await Org.findOne({ orgId }).lean();
-            if (!org) {
-                return { status: 404, json: { success: false, error: "Org not found" } };
-            }
-
-            const [readySources, conversations, testedActions, tables] = await Promise.all([
-                KnowledgeSource.countDocuments({ orgId, status: SourceStatus.READY }),
-                Conversation.countDocuments({ orgId }),
-                Action.countDocuments({ orgId, enabled: true, lastTestStatus: TestStatus.PASS }),
-                Table.countDocuments({ orgId }),
-            ]);
-
-            const agentConfigured =
-                (org.agent?.name && org.agent.name !== DEFAULT_AGENT_NAME) ||
-                (org.agent?.greeting && org.agent.greeting !== DEFAULT_GREETING);
-
-            const steps = [
-                {
-                    key: OnboardingStep.KNOWLEDGE,
-                    label: "Add a knowledge source",
-                    done: readySources > 0,
-                    href: "/app/knowledge",
-                },
-                {
-                    key: OnboardingStep.AGENT,
-                    label: "Name your agent",
-                    done: Boolean(agentConfigured),
-                    href: "/app/configuration",
-                },
-                {
-                    key: OnboardingStep.INSTALL,
-                    label: "Install the widget",
-                    done: conversations > 0,
-                    href: "/app/dashboard",
-                },
-                {
-                    key: OnboardingStep.ACTIONS,
-                    label: "Connect an API or table",
-                    done: testedActions > 0 || tables > 0,
-                    href: "/app/apis",
-                },
-            ];
-            const completed = steps.filter((step) => step.done).length;
-
-            return {
-                status: 200,
-                json: {
-                    success: true,
-                    data: {
-                        steps,
-                        completed,
-                        total: steps.length,
-                        percent: Math.round((completed / steps.length) * 100),
-                    },
-                },
-            };
-        } catch (error) {
-            console.error("OrgFunctions:getOnboarding: Catch block");
-            console.error(error);
-            generalFunctions.captureException(error);
-            return { status: 500, json: { success: false, error: "Internal server error, please contact support" } };
-        }
+        return require("../onboarding/wizardFunctions").getChecklist({ orgId });
     }
 
     // Renders ws_live_abc…xyz as ws_live_••••3f7a. Never returns the middle.

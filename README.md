@@ -47,6 +47,20 @@ Locally, `../widget/dist` is preferred when present so a fresh build shows
 immediately; the suite fails if it differs from `public/widget`, so the copy
 cannot be forgotten. `WIDGET_DIST=/path` overrides both.
 
+**Caching and compression.** `server.js` serves widget assets itself rather
+than through `express.static`, because production's nginx sends them
+uncompressed. It picks the build's `.br` or `.gz` sibling from
+`Accept-Encoding` and sets:
+
+| File | Cache-Control |
+|---|---|
+| `frame/frame.<hash>.js`, `frame/frame.<hash>.css` | `public, max-age=31536000, immutable` |
+| `widget.js`, `frame/index.html` | `public, max-age=300, stale-while-revalidate=86400` |
+| a fingerprint this deploy no longer has | current build, `no-cache` |
+
+`tests/widgetAssets.test.js` covers encoding choice, cache headers, the stale
+fingerprint fallback, path traversal and the trailing-slash redirect.
+
 ## Atlas search indexes (required for retrieval)
 
 Without both indexes `_hybridSearch` returns empty and the agent abstains.
@@ -78,6 +92,43 @@ Create them on the `chunks` collection:
 }
 ```
 
+## Context assembly and the repair pass
+
+Two things happen between rerank and the answer that the six-stage table in
+`spec.md` §5 did not originally have.
+
+**Neighbour expansion (stage 3b).** Reranking picks the 600-token chunk that
+best matches the question; the answer is routinely in the chunk next to it.
+`_expandNeighbors` fetches the chunks within `NEIGHBOR_EXPAND_RADIUS` positions
+in the same document, merges contiguous windows, trims the 15% overlap so the
+model does not read the same sentence twice, and stops widening once
+`CONTEXT_MAX_TOKENS` is spent (later chunks arrive bare). A passage cites the
+best-scoring chunk inside it, so `citationChunkIds` still resolve, and
+`memberChunkIds` records what was actually read. The validator reads the same
+widened context. The trace carries `contextChunkCount`.
+
+**Repair pass (stage 5b).** When the validator says an answer addresses the
+question but names unsupported claims, the turn gets one more generate call
+with those claims listed and an instruction to rewrite from the context alone.
+The rewrite is re-validated on the same terms; a second failure abstains as
+before. `repairAttempted` / `repairSucceeded` on the trace give the pass its
+own hit rate. It never runs for clarifications, tool proposals, or a validator
+that produced no claims — "does not answer the question" has no edit that
+fixes it.
+
+**Follow-ups.** The answer schema carries `followUps`: up to three short
+questions the model expects next and the shown knowledge can answer. They are
+sanitised in `_cleanFollowUps` and reach the widget as a `choices` component
+under an `ANSWERED` turn only.
+
+**Progress.** `runTurn` accepts `onProgress`; the chat path publishes each
+stage to the conversation's socket as `{ type: "progress", stage, sources? }`.
+A listener that throws is ignored.
+
+`tests/chatQuality.test.js` covers all of this in-process with the model calls
+and the chunk lookup stubbed — it is the one suite here that needs neither the
+server nor a database.
+
 ## API surface
 
 Public (widget, CORS `*`, no auth — identity via HMAC-signed `identify()` payloads):
@@ -85,7 +136,7 @@ Public (widget, CORS `*`, no auth — identity via HMAC-signed `identify()` payl
 ```
 POST /api/widget/bootstrap          { publicKey, conversationId?, identity? }
 POST /api/widget/messages           { publicKey, conversationId, content, identity? }
-POST /api/widget/actions/confirm    { publicKey, conversationId, confirmed, identity? }
+POST /api/widget/actions/confirm    { publicKey, conversationId, proposalId, confirmed: boolean, identity? }
 POST /api/widget/feedback           { publicKey, conversationId, rating: UP|DOWN }
 ```
 
@@ -96,7 +147,9 @@ caller is; on its own it grants access to no workspace data:
 GET   /api/auth/config              which sign-in methods this server offers
 POST  /api/auth/signup              { name, email, password } -> sets session cookie
 POST  /api/auth/login               { email, password }       -> sets session cookie
-POST  /api/auth/logout              clears the cookie
+POST  /api/auth/logout              revokes existing sessions and org JWTs, clears the cookie
+POST  /api/auth/verification        resend mailbox verification (session required)
+POST  /api/auth/verify-email        { token } (session required; explicit confirmation)
 GET   /api/auth/me                  { user, orgs[] }
 PATCH /api/auth/me                  { name }
 POST  /api/auth/token               { orgId } -> org JWT, after a membership check
@@ -209,8 +262,103 @@ seats in several workspaces, and `Member` is the join, keyed on the verified
 email. That is also why an OAuth address is only trusted once the provider
 reports it verified.
 
-Deferred per spec §13: SITEMAP crawling and FILE parsing (`501`), inline→worker
-crawls, email channel, and real billing/checkout. Password-reset links have no
-mail provider yet — outside production the link is returned in the response and
-logged; in production the flow is a no-op until delivery is wired up. Plan
-gating is enforced in the UI from `org.credits.plan`, not yet in the API.
+Sitemap crawling, file ingestion, crawl workers, email delivery/channel,
+billing adapters, and server-side plan gates are implemented. Their live
+provider and infrastructure behavior still needs deployment-specific validation.
+
+## Verification and production setup
+
+`npm test` creates a unique `zealoop_test_*` database on local MongoDB, seeds
+it, starts an API on an ephemeral port with deterministic model fixtures,
+runs the complete suite, and drops only that database. It never uses the
+ordinary development or production database. Set `TEST_MONGO_HOST` only to a
+local MongoDB host if port 27017 is unavailable. Fixtures verify API behavior;
+they do not measure model quality or Atlas retrieval accuracy.
+
+`npm run test:browser` uses the same disposable runner for Chromium checks of
+chat, live human replies, handoff, approval, cancellation, and replay rejection.
+Install its browser once with `npx playwright install chromium`. CI installs
+Chromium and retains screenshots from these flows; the browser job is distinct
+from the API/unit suite.
+
+For isolated browser testing, run `node scripts/runTests.js --serve`. It prints
+the temporary API URL and an `environment.json` path for the widget browser
+suites. Stop it with Ctrl+C to clean up the API and its disposable database.
+
+Configure `EMAIL_API_KEY` and a verified `EMAIL_FROM` sender in Resend for
+verification and password recovery. Without delivery, production signup and
+recovery fail explicitly. `ALLOW_DEV_AUTH_LINKS=true` exposes links only on an
+explicitly configured development/test instance; it is ignored in production.
+Tokens expire in one hour, are stored hashed, and are consumed atomically.
+Existing unverified accounts must verify their mailbox before using seats.
+
+Logout and password reset increment the persisted session version. Old org
+JWTs without an account/version must be replaced by signing in again after
+deployment. OAuth ownership of a previously unverified address clears any
+password planted before mailbox ownership was proved.
+
+Set `TRUST_PROXY` to the actual ingress proxy CIDRs, or a fixed hop count only
+when every path to the application has exactly that topology. Forwarded IP
+headers are ignored by default; HTTP and WebSocket requests share the trust
+policy. Auth and widget request budgets use atomic MongoDB counters. Write
+approvals and chat leases are also shared across API instances. MongoDB events
+relay messages to sockets on other instances; reconnect fetches persisted
+history. Socket connection counts remain per process.
+Run scheduled jobs on one designated instance and set
+`SCHEDULED_JOBS_ENABLED=false` on other API replicas. Schedules use UTC,
+await readiness, and prevent overlap within an instance. Crawl job leases
+remain independent of the scheduler flag. Scheduler failover still needs an
+operational plan; these schedules do not provide distributed leader election.
+
+Origin enforcement sets a workspace-specific `frame-ancestors` policy on the
+messenger HTML. The browser checks actual embedding ancestors while the
+iframe's own API origin remains allowed. Frame HTML with a real workspace key
+is not cached, so an updated embedding policy is checked on the next reload.
+This is an abuse barrier for browser embedding, not a replacement for verified
+identity or request budgets; server-to-server clients can forge Origin.
+
+Readiness requires the database and critical unique/TTL indexes. Route traffic
+only after `/ready` returns 200. User-controlled outbound requests validate
+every DNS address/redirect, pin the connection address, and enforce deadlines
+and byte limits. `ALLOW_TEST_LOOPBACK` is effective only under `NODE_ENV=test`.
+
+Writes require a fresh boolean approval and proposal ID. Duplicate execution
+keys never repeat the network call. An uncertain or interrupted write is
+escalated for human investigation, without automatic retry. The model receives
+the latest 50 history messages; widget reloads receive the latest 100. Human
+handoff suppresses AI replies, including a takeover during generation.
+
+## MCP installation server
+
+`/mcp` is an authenticated Streamable HTTP endpoint built with the official MCP
+SDK. It supports 2026-07-28 clients and stateless legacy 2025 initialization.
+Three read-only tools expose the token's workspace installation config,
+framework-specific code, and a bounded public-page source check:
+`zealoop_get_install_config`, `zealoop_get_install_instructions`, and
+`zealoop_verify_installation`. The coding agent edits the customer's repository
+or CMS using its existing permissions. These tools do not publish a site.
+
+Owners/admins manage credentials at `/api/org/:orgId/mcp/tokens` (GET/POST)
+and `/api/org/:orgId/mcp/tokens/:tokenId` (DELETE). Plaintext credentials are
+shown once, SHA-256 hashes are stored, and tokens expire in 30 days. Every MCP
+request checks the issuer's verified account/session version and current
+workspace role, plus revocation/expiry and shared MongoDB request budgets.
+Sign-out and password reset invalidate issued installation credentials.
+Tokens cannot access REST API data or widget signing secrets. Creation and
+revocation are audited. There is no OAuth flow in this initial integration;
+clients must support a configured bearer header.
+
+`API_URL` must match the public MCP Host header. Browser origins must match
+`API_URL` or `CORS_DASHBOARD_ORIGINS`; command-line clients omit Origin. The
+endpoint is readiness-gated and uses strict SDK tool schemas, rather than the
+Mongo operator middleware that rejects MCP's namespaced metadata keys.
+
+Installation instructions use the hosted loader because the npm SDK is not
+published. Verification rejects redirects (use the canonical page URL), private
+network targets and URLs with credentials. It fetches at most 1 MB within 10
+seconds and returns only source-detection booleans, not remote HTML or its
+instructions. Source presence and reported runtime telemetry do not prove JS
+execution; check the deployed launcher and CSP errors in a browser.
+
+Client configuration: <https://www.zealoop.com/docs/mcp>. Regression coverage:
+`npm test -- tests/mcp.test.js`; the full `npm test` includes these tests.

@@ -70,18 +70,21 @@ describe("clientIp", () => {
         socket: { remoteAddress: fallback },
     });
 
-    test("prefers the first entry of x-forwarded-for", () => {
+    test("ignores a spoofed forwarded header and uses Express's resolved IP", () => {
         const req = reqWith({ "x-forwarded-for": "203.0.113.7, 70.41.3.18, 150.172.238.178" }, "10.0.0.1");
-        assert.equal(clientIp(req), "203.0.113.7");
+        assert.equal(clientIp(req), "10.0.0.1");
     });
 
-    test("trims whitespace in the forwarded chain", () => {
+    test("a forwarded chain cannot bypass the limiter without a trusted proxy", () => {
         const req = reqWith({ "x-forwarded-for": "  203.0.113.7  ,10.0.0.2" }, "10.0.0.1");
-        assert.equal(clientIp(req), "203.0.113.7");
+        assert.equal(clientIp(req), "10.0.0.1");
     });
 
     test("falls back to the socket address with no proxy header", () => {
         assert.equal(clientIp(reqWith({}, "198.51.100.4")), "198.51.100.4");
+    });
+    test("raw WebSocket upgrade requests ignore untrusted forwarded headers", () => {
+        assert.equal(clientIp({ headers: { "x-forwarded-for": "203.0.113.7" }, socket: { remoteAddress: "198.51.100.4" } }), "198.51.100.4");
     });
 
     test("never returns undefined, so a missing address cannot collapse all callers into one key", () => {

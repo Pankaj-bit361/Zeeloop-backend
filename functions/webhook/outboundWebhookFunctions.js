@@ -11,6 +11,7 @@ const OutboundWebhook = require("../../models/webhook/outboundWebhook");
 const generalFunctions = require("../utilFunctions/generalFunctions");
 const auditFunctions = require("../audit/auditFunctions");
 const { planHasFeature } = require("../../config/plans");
+const { outboundRequest, parseDestination } = require("../utilFunctions/outboundRequest");
 
 // §5.6 — outbound webhooks.
 //
@@ -196,7 +197,8 @@ class OutboundWebhookFunctions {
             const body = JSON.stringify({ event, timestamp, data: payload });
             const signature = this.computeSignature({ secret, timestamp, body });
 
-            const response = await fetchImpl(hook.url, {
+            const response = await outboundRequest(hook.url, {
+                fetchImpl, timeoutMs: DELIVERY_TIMEOUT_MS, maxBytes: 256 * 1024, redirect: "error",
                 method: "POST",
                 headers: {
                     "content-type": "application/json",
@@ -205,7 +207,6 @@ class OutboundWebhookFunctions {
                     "zealoop-event": event,
                 },
                 body,
-                signal: AbortSignal.timeout(DELIVERY_TIMEOUT_MS),
             });
 
             hook.lastDeliveryAt = new Date();
@@ -244,7 +245,7 @@ class OutboundWebhookFunctions {
     _validateUrl(url) {
         let parsed;
         try {
-            parsed = new URL(String(url));
+            parsed = parseDestination(String(url)).url;
         } catch (error) {
             return { success: false, error: "url must be a valid absolute URL" };
         }

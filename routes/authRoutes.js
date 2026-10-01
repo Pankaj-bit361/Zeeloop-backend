@@ -1,4 +1,6 @@
 const express = require("express");
+const config = require("../config/config");
+const { authRateLimit } = require("../middlewares/rateLimit");
 const geoFunctions = require("../functions/utilFunctions/geoFunctions");
 const authFunctions = require("../functions/auth/authFunctions");
 const generalFunctions = require("../functions/utilFunctions/generalFunctions");
@@ -12,6 +14,7 @@ const { reqSessionAuth } = require("../middlewares/auth");
 // Routes stay thin: the cookie side effects live here because they need the
 // Express `res`, everything else is authFunctions'.
 const router = express.Router();
+router.use(authRateLimit);
 
 function fail(req, res, error) {
     console.error(`Auth router ${req.path} catch block`);
@@ -33,8 +36,9 @@ router.post("/signup", async (req, res) => {
     try {
         const result = await authFunctions.signup(req.body);
         if (!result.json.success) return res.status(result.status).json(result.json);
-        sessionFunctions.setSessionCookie(res, result.json.data.accountId);
-        return res.status(result.status).json({ success: true, data: { ok: true } });
+        sessionFunctions.setSessionCookie(res, result.json.data.accountId, result.json.data.sessionVersion);
+        const { verificationRequired, verificationSent, verificationUrl } = result.json.data;
+        return res.status(result.status).json({ success: true, data: { ok: true, verificationRequired, verificationSent, verificationUrl } });
     } catch (error) {
         return fail(req, res, error);
     }
@@ -44,7 +48,7 @@ router.post("/login", async (req, res) => {
     try {
         const result = await authFunctions.login(req.body);
         if (!result.json.success) return res.status(result.status).json(result.json);
-        sessionFunctions.setSessionCookie(res, result.json.data.accountId);
+        sessionFunctions.setSessionCookie(res, result.json.data.accountId, result.json.data.sessionVersion);
         return res.status(200).json({ success: true, data: { ok: true } });
     } catch (error) {
         return fail(req, res, error);
@@ -54,7 +58,8 @@ router.post("/login", async (req, res) => {
 router.post("/logout", async (req, res) => {
     try {
         sessionFunctions.clearSessionCookie(res);
-        const { status, json } = await authFunctions.logout();
+        const session = sessionFunctions.readSessionToken(req.cookies && req.cookies[config.SESSION_COOKIE]);
+        const { status, json } = await authFunctions.logout({ session });
         return res.status(status).json(json);
     } catch (error) {
         return fail(req, res, error);
@@ -126,13 +131,27 @@ router.post("/forgot-password", async (req, res) => {
     }
 });
 
+router.post("/verification", reqSessionAuth, async (req, res) => {
+    try {
+        const { status, json } = await authFunctions.sendVerification({ account: req.account });
+        return res.status(status).json(json);
+    } catch (error) { return fail(req, res, error); }
+});
+
+router.post("/verify-email", reqSessionAuth, async (req, res) => {
+    try {
+        const { status, json } = await authFunctions.verifyEmail({ account: req.account, token: req.body.token });
+        return res.status(status).json(json);
+    } catch (error) { return fail(req, res, error); }
+});
+
 router.post("/reset-password", async (req, res) => {
     try {
         const result = await authFunctions.resetPassword(req.body);
         if (!result.json.success) return res.status(result.status).json(result.json);
         // A completed reset signs you in — the alternative is bouncing someone
         // who just proved control of the address back to the login form.
-        sessionFunctions.setSessionCookie(res, result.json.data.accountId);
+        sessionFunctions.setSessionCookie(res, result.json.data.accountId, result.json.data.sessionVersion);
         return res.status(200).json({ success: true, data: { ok: true } });
     } catch (error) {
         return fail(req, res, error);
