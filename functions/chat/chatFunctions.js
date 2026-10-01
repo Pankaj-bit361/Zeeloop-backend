@@ -645,9 +645,10 @@ class ChatFunctions {
     }
 
     // POST /api/widget/conversations — hydrate previews for the conversation ids
-    // this browser already knows. The client's own id list is the auth boundary:
-    // ids are unguessable, and we only ever describe ids the caller presented.
-    async listWidgetConversations({ publicKey, conversationIds }) {
+    // this browser already knows. A valid signed identity can additionally
+    // recover that customer's chats after local storage is lost. An unsigned
+    // email claim never permits discovering IDs.
+    async listWidgetConversations({ publicKey, conversationIds, identity }) {
         console.log("ChatFunctions:listWidgetConversations");
         try {
             if (!publicKey || !Array.isArray(conversationIds)) {
@@ -661,9 +662,18 @@ class ChatFunctions {
                 return { status: 404, json: { success: false, error: "Unknown publicKey" } };
             }
             const ids = conversationIds.filter((id) => typeof id === "string").slice(0, 20);
-            const conversations = await Conversation.find({ orgId: org.orgId, conversationId: { $in: ids } })
+            const accessible = [{ conversationId: { $in: ids } }];
+            if (typeof identity?.email === "string" && typeof identity?.signature === "string"
+                && securityFunctions.verifyIdentitySignature({ org, email: identity.email, signature: identity.signature }).verified) {
+                // Read only: do not trust or rewrite the profile's cached verified
+                // flag; authorization comes from this request's signature.
+                const endUser = await EndUser.findOne({ orgId: org.orgId, email: identity.email }).select("endUserId").lean();
+                if (endUser) accessible.push({ endUserId: endUser.endUserId, channel: "CHAT" });
+            }
+            const conversations = await Conversation.find({ orgId: org.orgId, $or: accessible })
                 .select("conversationId status lastMessagePreview lastMessageAt hasHumanReply turnCount")
-                .sort({ lastMessageAt: -1 })
+                .sort({ lastMessageAt: -1, _id: -1 })
+                .limit(20)
                 .lean();
             const data = conversations.map((c) => ({
                 conversationId: c.conversationId,

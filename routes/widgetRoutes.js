@@ -68,6 +68,7 @@ router.post("/conversations", async (req, res) => {
         const { status, json } = await chatFunctions.listWidgetConversations({
             publicKey: req.body.publicKey,
             conversationIds: req.body.conversationIds,
+            identity: req.body.identity,
         });
         return res.status(status).json(json);
     } catch (error) {

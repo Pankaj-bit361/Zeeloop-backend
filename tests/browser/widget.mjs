@@ -1,6 +1,7 @@
 // CI browser checks use the real vendored widget and API, deterministic model
 // fixtures, and mock actions in the disposable backend test database.
 import assert from "node:assert/strict";
+import { createHmac } from "node:crypto";
 import { mkdir } from "node:fs/promises";
 import { chromium } from "playwright";
 import mongoose from "mongoose";
@@ -8,6 +9,7 @@ import Conversation from "../../models/conversation/conversation.js";
 import Message from "../../models/conversation/message.js";
 import Action from "../../models/action/action.js";
 import ActionExecution from "../../models/action/actionExecution.js";
+import EndUser from "../../models/user/endUser.js";
 import client from "../helpers/client.js";
 
 const { BASE_URL: base, devLogin, post, authHeader } = client;
@@ -20,7 +22,132 @@ const page = await browser.newPage({ viewport: { width: 1100, height: 860 } });
 const frame = () => page.frameLocator('iframe[title="Zealoop messenger"]');
 const orgId = "org_demo_acmeship", publicKey = "pk_live_zea_4Jw9TqXhK2mNvL8s";
 await mkdir("test-results", { recursive: true });
+
+async function checkHistory() {
+  const context = await browser.newContext();
+  const historyPage = await context.newPage();
+  const historyFrame = () => historyPage.frameLocator('iframe[title="Zealoop messenger"]');
+  const identity = { email: "browser-history@example.com", name: "History visitor" };
+  const id = "conv_browser_saved_history";
+  await Conversation.create({ orgId, conversationId: id, lastMessageAt: new Date(), lastMessagePreview: "Saved browser conversation" });
+  await Message.create({ orgId, conversationId: id, messageId: "msg_browser_saved_history", role: "USER", content: "Saved browser conversation" });
+  await historyPage.addInitScript(({ publicKey, identity, id }) => {
+    if (window !== window.top || localStorage.getItem("history-fixture-seeded")) return;
+    localStorage.setItem("history-fixture-seeded", "1");
+    localStorage.setItem(`zealoop:visitor:${publicKey}`, identity.email);
+    localStorage.setItem(`zealoop:conv:${publicKey}`, id);
+    localStorage.setItem(`zealoop:convs:${publicKey}`, JSON.stringify([id]));
+  }, { publicKey, identity, id });
+  await historyPage.route(`${base}/history-fixture`, route => route.fulfill({ contentType: "text/html", body:
+    `<html><body><script>window.zealoop=${JSON.stringify({ publicKey, apiUrl: base })}</script><script src="${base}/widget.js"></script></body></html>` }));
+  const startDelayedIdentity = async () => {
+    await historyPage.getByRole("button", { name: "Chat with Zea", exact: true }).click();
+    await historyFrame().locator(".hero-title").waitFor();
+    // Seovyn's auth request finishes after the frame has booted anonymously.
+    // Unsigned identity deliberately prevents server recovery hiding storage bugs.
+    await historyPage.evaluate(identity => window.Zealoop("identify", identity), identity);
+    await historyFrame().getByRole("button", { name: "Messages", exact: true }).click();
+    await historyFrame().getByRole("button", { name: /Saved browser conversation/ }).waitFor({ timeout: 5000 });
+    await historyFrame().getByRole("button", { name: /Saved browser conversation/ }).click();
+    await historyFrame().getByRole("log").getByText("Saved browser conversation", { exact: true }).waitFor();
+  };
+  try {
+    await historyPage.goto(`${base}/history-fixture`);
+    await startDelayedIdentity();
+    await historyPage.reload();
+    await startDelayedIdentity();
+
+    // A slow preview fetched before a new message must not erase the new ID
+    // when it arrives after the message response.
+    let releasePreview, previewStarted, previewFinished;
+    const previewGate = new Promise(resolve => { releasePreview = resolve; });
+    const started = new Promise(resolve => { previewStarted = resolve; });
+    const finished = new Promise(resolve => { previewFinished = resolve; });
+    let held = false;
+    const slowPreview = async route => {
+      if (held) return route.continue();
+      held = true;
+      const response = await route.fetch();
+      previewStarted();
+      await previewGate;
+      await route.fulfill({ response });
+      previewFinished();
+    };
+    await historyPage.route("**/api/widget/conversations", slowPreview);
+    await historyFrame().getByRole("button", { name: "Back", exact: true }).click();
+    await started;
+    const newTurn = historyPage.waitForResponse(response => response.url().endsWith("/api/widget/messages") && response.request().method() === "POST");
+    await historyFrame().getByRole("textbox", { name: "Ask Zea a question" }).fill("New conversation while previews load");
+    await historyFrame().getByRole("textbox", { name: "Ask Zea a question" }).press("Enter");
+    const newId = (await (await newTurn).json()).data.conversationId;
+    assert.ok(newId && newId !== id);
+    await historyPage.waitForFunction(({ publicKey, newId }) => JSON.parse(localStorage.getItem(`zealoop:convs:${publicKey}`) || "[]").includes(newId), { publicKey, newId });
+    releasePreview();
+    await finished;
+    await historyPage.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+    assert.equal(await historyPage.evaluate(({ publicKey, newId }) => JSON.parse(localStorage.getItem(`zealoop:convs:${publicKey}`) || "[]").includes(newId), { publicKey, newId }), true);
+    await historyPage.unroute("**/api/widget/conversations", slowPreview);
+
+    // Another person on this browser gets neither the old row nor transcript.
+    await historyPage.evaluate(() => window.Zealoop("identify", { email: "another-browser-visitor@example.com" }));
+    await historyFrame().getByRole("button", { name: "Messages", exact: true }).click();
+    await historyFrame().getByText("No conversations yet", { exact: true }).waitFor();
+    assert.equal(await historyFrame().getByText("Saved browser conversation").count(), 0);
+    await historyPage.evaluate(identity => window.Zealoop("identify", identity), identity);
+    await historyFrame().getByRole("button", { name: "Messages", exact: true }).click();
+    await historyFrame().getByRole("button", { name: /Saved browser conversation/ }).waitFor();
+    await historyPage.screenshot({ path: "test-results/restored-history.png" });
+    console.log("Browser history passed: delayed identity, reload, late preview, visitor isolation and return");
+
+    const endUser = await EndUser.findOne({ orgId, email: identity.email });
+    await Conversation.updateOne({ orgId, conversationId: id }, { $set: { endUserId: endUser.endUserId } });
+    const token = await devLogin(orgId);
+    const secret = (await post(`/api/org/${orgId}/widget-secret/reveal`, { headers: authHeader(token) })).json.data.widgetSecret;
+    const signedIdentity = { ...identity, signature: createHmac("sha256", secret).update(identity.email).digest("hex") };
+    // A new browser has no registry at all. Verify actual widget recovery through
+    // the signed API, not just a direct backend call with handcrafted IDs.
+    const freshContext = await browser.newContext();
+    try {
+      for (const storageBlocked of [false, true]) {
+        const freshPage = await freshContext.newPage();
+        if (storageBlocked) await freshPage.addInitScript(() => {
+          Object.defineProperty(window, "localStorage", { get() { throw new DOMException("Storage blocked", "SecurityError"); } });
+        });
+        await freshPage.route(`${base}/history-fixture`, route => route.fulfill({ contentType: "text/html", body:
+          `<html><body><script>window.zealoop=${JSON.stringify({ publicKey, apiUrl: base })};window.Zealoop=function(){window.Zealoop.q.push(Array.from(arguments))};window.Zealoop.q=[["identify",null],["identify",${JSON.stringify(signedIdentity)}],["boot"]]</script><script src="${base}/widget.js"></script></body></html>` }));
+        let recoveredWithoutIds = false;
+        freshPage.on("request", request => {
+          if (request.url().endsWith("/api/widget/conversations") && request.method() === "POST") {
+            const body = request.postDataJSON();
+            if (body.identity?.signature && body.conversationIds?.length === 0) recoveredWithoutIds = true;
+          }
+        });
+        await freshPage.goto(`${base}/history-fixture`);
+        const recoveredFrame = freshPage.frameLocator('iframe[title="Zealoop messenger"]');
+        const assertRecovered = async () => {
+          await freshPage.getByRole("button", { name: "Chat with Zea", exact: true }).click();
+          await recoveredFrame.getByRole("button", { name: "Messages", exact: true }).click();
+          await recoveredFrame.getByRole("button", { name: /Saved browser conversation/ }).click();
+          await recoveredFrame.getByRole("log").getByText("Saved browser conversation", { exact: true }).waitFor();
+        };
+        await assertRecovered();
+        assert.equal(recoveredWithoutIds, true, "server recovery used the signature and no saved IDs");
+        if (storageBlocked) {
+          await freshPage.reload();
+          await assertRecovered();
+        }
+        await freshPage.close();
+        await freshContext.clearCookies();
+      }
+    } finally { await freshContext.close(); }
+    console.log("Browser account history passed: fresh browser and blocked storage recovery");
+  } finally {
+    await context.close();
+  }
+}
+
 try {
+  await checkHistory();
   await page.goto(`${base}/widget/demo?conv=fresh`);
   await page.getByRole("button", { name: "Chat with Zea", exact: true }).click();
   const sent = page.waitForResponse(response => response.url().endsWith("/api/widget/messages") && response.request().method() === "POST");
