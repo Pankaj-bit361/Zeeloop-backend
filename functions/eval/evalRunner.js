@@ -1,46 +1,17 @@
 const crypto = require("crypto");
 const config = require("../../config/config");
-const { ConfigTarget, PublishState, IdPrefix, ConversationStatus } = require("../../config/enums");
+const { IdPrefix, ConversationStatus } = require("../../config/enums");
 const Org = require("../../models/org/org");
 const Conversation = require("../../models/conversation/conversation");
 const Message = require("../../models/conversation/message");
 const TurnTrace = require("../../models/trace/turnTrace");
-const GuidanceRule = require("../../models/config/guidanceRule");
-const EscalationRule = require("../../models/config/escalationRule");
-const EscalationGuidance = require("../../models/config/escalationGuidance");
+const evalContext = require("./evalContext");
 const generalFunctions = require("../utilFunctions/generalFunctions");
 const agentFunctions = require("../agent/agentFunctions");
 
-// Shared machinery for batch tests (§3.1) and simulations (§3.2). Both need the
-// same two awkward things, so both get them from here.
-//
-// ── Running against DRAFT config ─────────────────────────────────────
-//
-// The pipeline reads live config from the database. Testing a draft therefore
-// needs the draft to be readable as if it were live, without it actually being
-// live for real customers for the duration of the test.
-//
-// The approach: temporarily flip the org's draft objects to LIVE inside a
-// try/finally, run the turns, and flip them back. Considered and rejected:
-//
-//   - Threading an override through every layer of the pipeline. Correct, and it
-//     means every function between the route and the prompt builder grows a
-//     parameter it does not use, forever.
-//   - Cloning the org into a shadow workspace. Correct, and it means every
-//     knowledge chunk, table and action gets cloned too — the cost is enormous
-//     and the clone drifts.
-//
-// The flip is confined to one org's config rows, the finally block always runs,
-// and a crash mid-test leaves rows in a state the next publish corrects. That is
-// an honest trade, not a free lunch: a draft run does briefly affect live
-// traffic for that workspace. It is documented in the API response so nobody
-// discovers it by accident.
-//
-// ── Ephemeral conversations ──────────────────────────────────────────
-//
-// Test turns write real Conversation, Message and TurnTrace rows, because the
-// pipeline needs them. They are deleted afterwards and marked while they exist,
-// so a test run does not inflate the automation rate or fill the inbox.
+// Batch tests and simulations use request-local draft configuration. No rows
+// are promoted, so concurrent customer traffic continues to see live rules.
+// Evaluation conversations and traces are ephemeral and removed afterwards.
 
 const EVAL_ID_MARKER = "eval";
 
@@ -48,19 +19,10 @@ class EvalRunner {
     // ── Public Functions ─────────────────────────────────────────────
 
     // Runs `items` through `handler` with bounded concurrency, and with the
-    // draft flip applied around the whole batch rather than per item.
+    // draft context applied around the whole batch rather than per item.
     async withTarget({ orgId, target, run }) {
         console.log("EvalRunner:withTarget: orgId:", orgId, "target:", target);
-        if (target !== ConfigTarget.DRAFT) {
-            return await run();
-        }
-
-        const flipped = await this._promoteDrafts({ orgId });
-        try {
-            return await run();
-        } finally {
-            await this._demoteDrafts({ orgId, flipped });
-        }
+        return evalContext.run({ orgId, target }, run);
     }
 
     // One question through the real pipeline, in a throwaway conversation.
@@ -162,30 +124,7 @@ class EvalRunner {
         });
     }
 
-    async _promoteDrafts({ orgId }) {
-        const flipped = [];
-        for (const Model of [GuidanceRule, EscalationRule, EscalationGuidance]) {
-            const drafts = await Model.find({ orgId, publishState: PublishState.DRAFT }).select("_id enabled").lean();
-            if (drafts.length === 0) continue;
-            const ids = drafts.map((draft) => draft._id);
-            // `enabled` is restored alongside publishState: a draft is created
-            // disabled, and promoting it without enabling it would test nothing.
-            flipped.push({ Model, ids, previous: drafts.map((draft) => ({ _id: draft._id, enabled: draft.enabled })) });
-            await Model.updateMany({ _id: { $in: ids } }, { $set: { publishState: PublishState.LIVE, enabled: true } });
-        }
-        return flipped;
-    }
 
-    async _demoteDrafts({ orgId, flipped }) {
-        for (const entry of flipped) {
-            for (const previous of entry.previous) {
-                await entry.Model.updateOne(
-                    { _id: previous._id },
-                    { $set: { publishState: PublishState.DRAFT, enabled: previous.enabled } }
-                );
-            }
-        }
-    }
 }
 
 module.exports = new EvalRunner();

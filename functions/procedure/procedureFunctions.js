@@ -51,7 +51,7 @@ class ProcedureFunctions {
         }
     }
 
-    async createProcedure({ orgId, name, description, triggerType, keywords, intentDescription, eventName, steps }) {
+    async createProcedure({ orgId, name, description, triggerType, keywords, intentDescription, eventName, steps, enabled = true }) {
         console.log("ProcedureFunctions:createProcedure: orgId:", orgId);
         try {
             const validation = await this._validate({ orgId, name, triggerType, keywords, intentDescription, eventName, steps });
@@ -67,7 +67,7 @@ class ProcedureFunctions {
                 intentDescription: intentDescription || "",
                 eventName: eventName || null,
                 steps: this.normaliseSteps(steps),
-                enabled: true,
+                enabled: enabled === true,
             });
 
             return { status: 201, json: { success: true, data: procedure.toJSON() } };
@@ -111,10 +111,10 @@ class ProcedureFunctions {
         }
     }
 
-    async deleteProcedure({ orgId, procedureId }) {
+    async deleteProcedure({ orgId, procedureId, disabledOnly = false }) {
         console.log("ProcedureFunctions:deleteProcedure: procedureId:", procedureId);
         try {
-            const result = await Procedure.deleteOne({ orgId, procedureId });
+            const result = await Procedure.deleteOne({ orgId, procedureId, ...(disabledOnly ? { enabled: { $ne: true } } : {}) });
             if (result.deletedCount === 0) return { status: 404, json: { success: false, error: "Procedure not found" } };
             return { status: 200, json: { success: true, data: { deleted: procedureId } } };
         } catch (error) {

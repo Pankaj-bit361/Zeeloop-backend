@@ -23,6 +23,7 @@ const CRITICAL_MODELS = [
     { path: "../../models/security/mcpOAuth", key: "McpClient", why: "MCP OAuth client uniqueness and capacity" },
     { path: "../../models/security/mcpOAuth", key: "McpRequest", why: "MCP OAuth consent request uniqueness" },
     { path: "../../models/security/mcpOAuth", key: "McpGrant", why: "MCP OAuth credential uniqueness and capacity" },
+    { path: "../../models/security/mcpArtifact", why: "MCP artifact ownership uniqueness" },
     { path: "../../models/security/installToken", why: "MCP installation token uniqueness" },
     { path: "../../models/security/rateBucket", why: "shared rate-limit counters" },
     { path: "../../models/action/actionExecution", why: "action execution idempotency" },

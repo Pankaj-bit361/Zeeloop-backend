@@ -80,6 +80,9 @@ const actionSchema = new mongoose.Schema(
         // null = never tested. Changing url/params/secret resets this to null.
         lastTestStatus: { type: String, enum: [...Object.values(TestStatus), null], default: null },
         lastTestedAt: { type: Date },
+        // Distinguishes a real endpoint test from a configured mock. Legacy
+        // PASS rows need one fresh test before MCP can activate them.
+        lastTestMocked: { type: Boolean, default: null },
         // §2.5 — computed by cron from ActionExecution, never at write time.
         stats: { type: statsSchema, default: () => ({}) },
         // §5.3 — actions join the draft/live system. `publishState` is what the

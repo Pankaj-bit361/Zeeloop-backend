@@ -8,10 +8,11 @@ const audit = require("../audit/auditFunctions");
 const security = require("../security/securityFunctions");
 const { AuditAction } = require("../../config/enums");
 const { outboundRequest } = require("../utilFunctions/outboundRequest");
+const { INSTALL, normalizeScope } = require("./scopes");
 
 const hash = value => crypto.createHash("sha256").update(value).digest("hex");
 const publicToken = row => ({ tokenId: row.tokenId, name: row.name, preview: row.preview,
-    createdAt: row.createdAt, expiresAt: row.expiresAt, revokedAt: row.revokedAt, lastUsedAt: row.lastUsedAt });
+    createdAt: row.createdAt, expiresAt: row.expiresAt, revokedAt: row.revokedAt, lastUsedAt: row.lastUsedAt, scope: row.scope || INSTALL });
 const js = value => JSON.stringify(value).replace(/</g, "\\u003c");
 const slotConflict = error => error.code === 11000 && error.keyPattern?.activeSlot;
 
@@ -31,10 +32,13 @@ async function reserveLegacySlots(orgId, now) {
     }
 }
 
-async function createToken({ orgId, email, name }) {
+async function createToken({ orgId, email, name, scope }) {
     if (typeof name !== "string" || !name.trim() || name.trim().length > 80) {
         return { status: 400, json: { success: false, error: "Use a token name between 1 and 80 characters" } };
     }
+    let granted;
+    try { granted = normalizeScope(scope); }
+    catch (error) { return { status: 400, json: { success: false, error: error.message } }; }
     const account = await Account.findOne({ email, emailVerifiedAt: { $ne: null } }).lean();
     if (!account) return { status: 403, json: { success: false, error: "Verify your account before creating an installation token" } };
     const active = await InstallToken.countDocuments({ orgId, revokedAt: null, expiresAt: { $gt: new Date() } });
@@ -42,7 +46,7 @@ async function createToken({ orgId, email, name }) {
     await reserveLegacySlots(orgId, new Date());
     const token = `zi_${crypto.randomBytes(32).toString("hex")}`;
     const attributes = { orgId, accountId: account.accountId, sessionVersion: account.sessionVersion || 0,
-        name: name.trim(), tokenId: `install_${crypto.randomUUID()}`, tokenHash: hash(token), preview: `${token.slice(0, 10)}…`,
+        name: name.trim(), scope: granted, tokenId: `install_${crypto.randomUUID()}`, tokenHash: hash(token), preview: `${token.slice(0, 10)}…`,
         expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60_000) };
     let row;
     for (let slot = 0; slot < 20; slot++) {

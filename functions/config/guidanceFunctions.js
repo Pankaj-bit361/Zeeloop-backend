@@ -11,6 +11,7 @@ const EscalationGuidance = require("../../models/config/escalationGuidance");
 const generalFunctions = require("../utilFunctions/generalFunctions");
 const conditionFunctions = require("./conditionFunctions");
 const segmentFunctions = require("./segmentFunctions");
+const evalContext = require("../eval/evalContext");
 
 // The bridge between the configuration surface (§2) and the pipeline. Loads
 // this org's live, enabled, audience-matching config and composes it into the
@@ -91,9 +92,9 @@ class GuidanceFunctions {
             const segmentIds = membership.segmentIds;
 
             const [guidanceRules, escalationRules, escalationGuidance] = await Promise.all([
-                GuidanceRule.find({ orgId, publishState: PublishState.LIVE, enabled: true }).lean(),
-                EscalationRule.find({ orgId, publishState: PublishState.LIVE, enabled: true }).lean(),
-                EscalationGuidance.find({ orgId, publishState: PublishState.LIVE, enabled: true }).lean(),
+                GuidanceRule.find(evalContext.configFilter(orgId)).lean(),
+                EscalationRule.find(evalContext.configFilter(orgId)).lean(),
+                EscalationGuidance.find(evalContext.configFilter(orgId)).lean(),
             ]);
 
             const applicableGuidance = guidanceRules.filter((rule) =>
