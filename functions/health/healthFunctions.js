@@ -67,11 +67,9 @@ class HealthFunctions {
         }
     }
 
-    // Run once at boot. Hybrid search silently returns empty without the Atlas
-    // search indexes — the product looks like it has no knowledge rather than
-    // like it is broken, which is the worst possible failure mode and exactly
-    // what the PRD calls out. Logged loudly rather than thrown: a dashboard-only
-    // deployment is legitimate, and refusing to boot would be worse.
+    // Run once at boot. Missing/building indexes degrade semantic retrieval;
+    // keyword search continues working. Report the degraded state without
+    // preventing the API from booting or claiming the knowledge is empty.
     async assertSearchIndexes() {
         const result = await this._checkSearchIndexes();
         if (result.status === Status.OK) {
@@ -79,19 +77,8 @@ class HealthFunctions {
             return { success: true };
         }
 
-        console.error("");
-        console.error("  ┌───────────────────────────────────────────────────────────────┐");
-        console.error("  │  HYBRID SEARCH IS DISABLED                                    │");
-        console.error("  └───────────────────────────────────────────────────────────────┘");
-        console.error(`  ${result.detail}`);
-        console.error("");
-        console.error("  Retrieval will return NO results. The agent will abstain from");
-        console.error("  every question rather than reporting an error, so this looks");
-        console.error("  like an empty knowledge base rather than a broken deployment.");
-        console.error("");
-        console.error(`  Required on the chunks collection: ${config.VECTOR_INDEX_NAME}, ${config.TEXT_INDEX_NAME}`);
-        console.error("  See backend/README.md for the index definitions.");
-        console.error("");
+        console.warn(`Server: Atlas search unavailable — ${result.detail}`);
+        console.warn(`Server: keyword retrieval active. Expected chunks indexes: ${config.VECTOR_INDEX_NAME}, ${config.TEXT_INDEX_NAME}; see README.md.`);
         return { success: false };
     }
 

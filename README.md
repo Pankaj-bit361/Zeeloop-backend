@@ -73,7 +73,8 @@ The database user needs the `createSearchIndexes` privilege.
 
 When an index is missing, building, or unavailable (including local MongoDB),
 heading-aware keyword retrieval remains active. It ranks all workspace matches
-before limiting results, boosts rare terms and adjacent query words, keeps two-letter acronyms and Unicode terms, and
+before limiting results, boosts rare terms and adjacent query words, keeps
+two-letter acronyms and Unicode terms, and
 matches words rather than arbitrary substrings. Agent answers still pass the
 grounding validator. Atlas returns empty arrays for some unavailable indexes,
 so fallback applies to both empty results and errors.
