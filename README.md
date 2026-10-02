@@ -129,6 +129,13 @@ best-scoring chunk inside it, so `citationChunkIds` still resolve, and
 `memberChunkIds` records what was actually read. The validator reads the same
 widened context. The trace carries `contextChunkCount`.
 
+**Saved business facts.** Product, pricing, free-tier terms, support hours,
+documentation URLs and labelled facts from `org.businessContext` are shared
+between generation and validation, including the repair pass. Chunk headings
+also reach both stages. Saved facts can support an answer when retrieval has
+no relevant chunks; the answer still requires validation. Tone, guidance
+instructions and customer messages are not treated as factual evidence.
+
 **Repair pass (stage 5b).** When the validator says an answer addresses the
 question but names unsupported claims, the turn gets one more generate call
 with those claims listed and an instruction to rewrite from the context alone.

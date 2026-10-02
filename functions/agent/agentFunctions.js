@@ -233,7 +233,10 @@ class AgentFunctions {
         }));
         trace.belowThreshold = belowThreshold;
 
-        if (belowThreshold && tableContext.rows.length === 0) {
+        // Saved workspace facts (product, pricing, support hours) are evidence
+        // even when a search has no relevant chunks, just like verified rows.
+        // Any answer from them still passes the same strict validator.
+        if (belowThreshold && tableContext.rows.length === 0 && !guidanceFunctions.composeBusinessContext({ org })) {
             trace.outcome = TurnOutcome.ABSTAINED;
             return {
                 success: true,
@@ -295,7 +298,7 @@ class AgentFunctions {
         // Stage 5 — validate (fail closed)
         report("checking");
         const validateStart = Date.now();
-        let verdict = await this._runValidate({ query, reply: generation.reply, topChunks: contextChunks, tableContext, trace });
+        let verdict = await this._runValidate({ org, query, reply: generation.reply, topChunks: contextChunks, tableContext, trace });
         trace.latencyMs.validate = Date.now() - validateStart;
         trace.grounded = verdict.grounded;
         trace.answersQuery = verdict.answersQuery;
@@ -321,6 +324,7 @@ class AgentFunctions {
             if (repaired.outcome === TurnOutcome.ANSWERED && !repaired.halted && repaired.reply) {
                 const recheckStart = Date.now();
                 const second = await this._runValidate({
+                    org,
                     query,
                     reply: repaired.reply,
                     topChunks: contextChunks,
@@ -712,12 +716,13 @@ class AgentFunctions {
         };
     }
 
-    async _runValidate({ query, reply, topChunks, tableContext, trace }) {
+    async _runValidate({ org, query, reply, topChunks, tableContext, trace }) {
         try {
             const context = [
-                ...topChunks.map((chunk) => chunk.text),
+                guidanceFunctions.composeBusinessContext({ org }),
+                ...topChunks.map((chunk) => `${(chunk.headingPath || []).join(" › ")}\n${chunk.text}`),
                 ...tableContext.rows.map((row) => JSON.stringify(row.data)),
-            ].join("\n---\n");
+            ].filter(Boolean).join("\n---\n");
             const result = await llmFunctions.completeJson({
                 model: config.SMALL_MODEL,
                 system: "You are a strict validator. Check whether the answer is fully supported by the context and actually addresses the question.",

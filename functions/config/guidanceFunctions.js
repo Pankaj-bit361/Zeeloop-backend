@@ -155,7 +155,6 @@ class GuidanceFunctions {
     composeIdentityAndContext({ org }) {
         const parts = [];
         const agent = org.agent || {};
-        const business = org.businessContext || {};
 
         const tone = LENGTH_GUIDANCE[agent.answerLength] || LENGTH_GUIDANCE[AnswerLength.STANDARD];
         const formality = {
@@ -172,6 +171,17 @@ class GuidanceFunctions {
             parts.push("LANGUAGE: Reply in the same language the customer wrote in.");
         }
 
+        const businessContext = this.composeBusinessContext({ org });
+        if (businessContext) parts.push(businessContext);
+
+        return { prompt: parts.join("\n\n"), maxTokens: tone.maxTokens };
+    }
+
+    // Factual evidence shared by generation and validation. Tone, language,
+    // guidance rules and customer messages must not become factual evidence.
+    composeBusinessContext({ org }) {
+        if (!org) return "";
+        const business = org.businessContext || {};
         const facts = [
             business.productOneLiner && `What ${org.name} is: ${business.productOneLiner}`,
             business.pricingSummary && `Pricing: ${business.pricingSummary}`,
@@ -181,15 +191,9 @@ class GuidanceFunctions {
             ...(business.facts || []).map((fact) => fact.label && `${fact.label}: ${fact.value}`),
         ].filter(Boolean);
 
-        if (facts.length > 0) {
-            parts.push(
-                `BUSINESS CONTEXT — these facts are always true and you may state them without a citation:\n${facts
-                    .map((fact) => `- ${fact}`)
-                    .join("\n")}`
-            );
-        }
-
-        return { prompt: parts.join("\n\n"), maxTokens: tone.maxTokens };
+        return facts.length
+            ? `BUSINESS CONTEXT — these facts are always true and you may state them without a citation:\n${facts.map((fact) => `- ${fact}`).join("\n")}`
+            : "";
     }
 
     // Served to the dashboard so the chips live in one place rather than being
