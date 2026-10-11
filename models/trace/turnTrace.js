@@ -19,6 +19,15 @@ const turnTraceSchema = new mongoose.Schema(
         gateSentiment: { type: String },
         gateSafe: { type: Boolean, default: true },
         gateFailedOpen: { type: Boolean, default: false },
+        // the gate said CHITCHAT to a reply to the agent's own question
+        gateOverridden: { type: Boolean, default: false },
+        // the rewrite said the message only acknowledged the agent
+        rewriteNeedsAnswer: { type: Boolean, default: null },
+        acknowledgement: { type: Boolean, default: false },
+        // validation failed and a model-written decline replaced the fixed line
+        fallbackDecline: { type: Boolean, default: false },
+        // chunks cited by the previous answers, added to this turn's context
+        carriedChunkCount: { type: Number, default: 0 },
 
         candidateCount: { type: Number, default: 0 },
         topChunks: {

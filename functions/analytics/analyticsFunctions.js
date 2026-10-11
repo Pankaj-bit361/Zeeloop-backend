@@ -2,7 +2,7 @@ const Conversation = require("../../models/conversation/conversation");
 const TurnTrace = require("../../models/trace/turnTrace");
 const Message = require("../../models/conversation/message");
 const config = require("../../config/config");
-const { ConversationStatus, MessageRole, TurnOutcome, FeedbackRating } = require("../../config/enums");
+const { ConversationStatus, MessageRole, TurnOutcome, FeedbackRating, GateIntent } = require("../../config/enums");
 const generalFunctions = require("../utilFunctions/generalFunctions");
 
 // The resolution definition (§3.3), written once and enforced in exactly one
@@ -217,7 +217,9 @@ class AnalyticsFunctions {
 
             const candidates = await Conversation.find({
                 isResolved: false,
-                status: { $ne: ConversationStatus.ESCALATED },
+                // OPEN only: a thread this job already closed without counting
+                // it stays isResolved: false, and must not be swept again.
+                status: ConversationStatus.OPEN,
                 hasHumanReply: false,
                 feedback: { $ne: FeedbackRating.DOWN },
                 lastMessageAt: { $lte: cutoff, $ne: null },
@@ -235,11 +237,22 @@ class AnalyticsFunctions {
                 });
                 if (laterUserMessage) continue;
 
-                conversation.isResolved = true;
+                // "the agent answered": the last substantive turn must be a real
+                // answer. A visitor who leaves after a clarifying question, an
+                // abstention or a bare greeting gave up; the thread still closes,
+                // but it is not counted as a win. A closing "thanks" is
+                // chitchat, so it is skipped over rather than disqualifying.
+                const traces = await TurnTrace.find({ orgId: conversation.orgId, conversationId: conversation.conversationId })
+                    .sort({ turn: -1 })
+                    .select("outcome gateIntent")
+                    .lean();
+                const lastSubstantive = traces.find((trace) => trace.gateIntent !== GateIntent.CHITCHAT);
+
+                conversation.isResolved = !!lastSubstantive && lastSubstantive.outcome === TurnOutcome.ANSWERED;
                 conversation.status = ConversationStatus.RESOLVED;
                 conversation.endedAt = conversation.endedAt || conversation.lastMessageAt;
                 await conversation.save();
-                resolvedCount += 1;
+                if (conversation.isResolved) resolvedCount += 1;
             }
 
             console.log("AnalyticsFunctions:computeResolutions: resolved:", resolvedCount);

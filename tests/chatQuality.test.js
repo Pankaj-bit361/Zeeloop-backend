@@ -42,7 +42,7 @@ function stubEnvironment({ generate, validate, gate, rewrite, rows } = {}) {
     let generateCalls = 0;
     stub(llmFunctions, "completeJson", async ({ system, messages }) => {
         if (/message classifier/.test(system)) {
-            return { json: gate ? await gate() : { language: "en", intent: "QUESTION", sentiment: "NEUTRAL", safe: true }, inputTokens: 10, outputTokens: 5 };
+            return { json: gate ? await gate({ system, messages }) : { language: "en", intent: "QUESTION", sentiment: "NEUTRAL", safe: true }, inputTokens: 10, outputTokens: 5 };
         }
         if (/Rewrite the user's latest message/.test(system)) {
             return { json: rewrite ? await rewrite() : { query: "refund policy" }, inputTokens: 10, outputTokens: 5 };
@@ -229,6 +229,193 @@ describe("stage 0 and 1 run together", () => {
     });
 });
 
+describe("a short reply to the agent's own question", () => {
+    // conv_f15bf87f0ffecb11: Zea asked "research, writing, approval, or
+    // publishing?", the visitor said "yeah everything", the gate called it
+    // CHITCHAT and the visitor was greeted afresh.
+    const asked = [
+        { role: "USER", content: "Question about \"How Seovyn works\":" },
+        { role: "ASSISTANT", content: "What would you like to know about how Seovyn works—research, writing, approval, or publishing?" },
+    ];
+    const chitchat = { language: "en", intent: "CHITCHAT", sentiment: "NEUTRAL", safe: true };
+
+    test("the gate is shown the question being answered", async () => {
+        let gateInput = null;
+        stubEnvironment({
+            gate: async ({ messages }) => { gateInput = messages[0].content; return { ...chitchat, intent: "QUESTION" }; },
+            rewrite: async () => ({ query: "How does Seovyn work, including research, writing, approval, and publishing?" }),
+            generate: async () => answer("Refunds are available within 14 days."),
+            validate: async () => ok,
+        });
+        await agentFunctions.runTurn({ org, conversation: { ...conversation, turnCount: 4 }, endUser: null, identityVerified: false, rawMessage: "yeah everything", history: asked });
+        assert.match(gateInput, /research, writing, approval, or publishing\?/);
+        assert.match(gateInput, /yeah everything/);
+    });
+
+    test("a CHITCHAT verdict the rewrite expanded goes through retrieval, not a fresh greeting", async () => {
+        let chitchatCalled = false;
+        const env = stubEnvironment({
+            gate: async () => chitchat,
+            rewrite: async () => ({ query: "How does Seovyn work, including research, writing, approval, and publishing?" }),
+            generate: async () => answer("Refunds are available within 14 days."),
+            validate: async () => ok,
+        });
+        stub(llmFunctions, "complete", async () => { chitchatCalled = true; return { text: "Great! How can I help you today?" }; });
+        const result = await agentFunctions.runTurn({ org, conversation: { ...conversation, turnCount: 4 }, endUser: null, identityVerified: false, rawMessage: "yeah everything", history: asked });
+        assert.equal(chitchatCalled, false);
+        assert.equal(result.outcome, TurnOutcome.ANSWERED);
+        assert.equal(env.traces[0].gateIntent, "QUESTION");
+        assert.equal(env.traces[0].gateOverridden, true);
+        assert.ok(env.traces[0].candidateCount > 0);
+    });
+
+    test("a real pleasantry after a question stays chitchat", async () => {
+        let chitchatCalled = false;
+        const env = stubEnvironment({
+            gate: async () => chitchat,
+            rewrite: async () => ({ query: "thanks" }),
+            generate: async () => { throw new Error("generate must not run"); },
+            validate: async () => ok,
+        });
+        stub(llmFunctions, "complete", async () => { chitchatCalled = true; return { text: "You're welcome!" }; });
+        const result = await agentFunctions.runTurn({ org, conversation: { ...conversation, turnCount: 2 }, endUser: null, identityVerified: false, rawMessage: "thanks",
+            history: [{ role: "USER", content: "hey" }, { role: "ASSISTANT", content: "Hey! How can I help you today?" }] });
+        assert.equal(chitchatCalled, true);
+        assert.equal(result.reply, "You're welcome!");
+        assert.equal(env.traces[0].gateOverridden, undefined);
+    });
+});
+
+describe("decline and escalate replies", () => {
+    test("a decline is shown in the model's words, unvalidated, as an abstention", async () => {
+        const env = stubEnvironment({
+            generate: async () => ({ type: "decline", text: "That's outside what I can help with here — ask me anything about AcmeShip." }),
+            validate: async () => { throw new Error("a decline must not be validated"); },
+        });
+        const result = await agentFunctions.runTurn({ org, conversation, endUser: null, identityVerified: false, rawMessage: "what's the weather in Delhi?", history: [] });
+        assert.equal(result.outcome, TurnOutcome.ABSTAINED);
+        assert.match(result.reply, /outside what I can help with/);
+        assert.equal(env.counts().validateCalls, 0);
+    });
+
+    test("a long 'decline' may carry claims, so it is validated like an answer", async () => {
+        const env = stubEnvironment({
+            generate: async () => ({ type: "decline", text: "Refunds are available within 14 days. ".repeat(12) }),
+            validate: async () => ok,
+        });
+        const result = await agentFunctions.runTurn({ org, conversation, endUser: null, identityVerified: false, rawMessage: "refund?", history: [] });
+        assert.equal(result.outcome, TurnOutcome.ANSWERED);
+        assert.equal(env.counts().validateCalls, 1);
+    });
+
+    test("an escalate reply is a real handoff: ESCALATED with escalate set, not a sentence the validator rejects", async () => {
+        const env = stubEnvironment({
+            generate: async () => ({ type: "escalate", text: "I'm bringing in the AcmeShip team — they'll reply here." }),
+            validate: async () => { throw new Error("a handoff must not be validated"); },
+        });
+        const result = await agentFunctions.runTurn({ org, conversation, endUser: null, identityVerified: false, rawMessage: "I was charged twice", history: [] });
+        assert.equal(result.outcome, TurnOutcome.ESCALATED);
+        assert.equal(result.escalate, true);
+        assert.equal(env.traces[0].outcome, TurnOutcome.ESCALATED);
+        assert.equal(env.counts().validateCalls, 0);
+    });
+});
+
+describe("real-conversation fixes", () => {
+    test("a failed answer is replaced by the model's own decline, not the fixed English line", async () => {
+        const env = stubEnvironment({
+            generate: async ({ call }) => call === 1 ? answer("Refunds cover shipping too.") : { type: "decline", text: "No tengo información fiable sobre eso. ¿Quieres que avise al equipo?" },
+            validate: async () => ({ grounded: false, answersQuery: false, unsupportedClaims: [] }),
+        });
+        const turn = await agentFunctions.runTurn({ org, conversation, endUser: null, identityVerified: false, rawMessage: "¿El reembolso cubre el envío?", history: [] });
+        assert.equal(turn.outcome, TurnOutcome.ABSTAINED);
+        assert.match(turn.reply, /No tengo información/);
+        assert.equal(env.traces[0].fallbackDecline, true);
+    });
+
+    test("an acknowledgement the gate called a question is answered in context, without search or validation", async () => {
+        let chitchatInput = null;
+        const env = stubEnvironment({
+            rewrite: async () => ({ query: "I'll email the team", needsAnswer: false }),
+            generate: async () => { throw new Error("must not generate"); },
+            validate: async () => { throw new Error("must not validate"); },
+        });
+        stub(llmFunctions, "complete", async ({ messages }) => { chitchatInput = messages; return { text: "Sounds good — they'll take it from there." }; });
+        const turn = await agentFunctions.runTurn({ org, conversation: { ...conversation, turnCount: 3 }, endUser: null, identityVerified: false, rawMessage: "ok i'll just email them",
+            history: [{ role: "USER", content: "refund?" }, { role: "ASSISTANT", content: "Email the team with the payment date and amount." }] });
+        assert.equal(turn.reply, "Sounds good — they'll take it from there.");
+        assert.equal(env.traces[0].acknowledgement, true);
+        assert.equal(env.traces[0].candidateCount, 0);
+        assert.equal(chitchatInput[0].content, "Email the team with the payment date and amount.");
+    });
+
+    test("a long handoff message is kept as its validated answer, not swapped for the bare handoff line", async () => {
+        const long = "To check a duplicate charge, tell us the date and amount of each payment. Refunds for billing mistakes are covered, and the team replies within 2 business days. Please don't open a chargeback while it is reviewed, because that freezes the account. ".repeat(2);
+        stubEnvironment({ generate: async () => ({ type: "escalate", text: long }), validate: async () => ok });
+        const turn = await agentFunctions.runTurn({ org, conversation, endUser: null, identityVerified: false, rawMessage: "I was charged twice", history: [] });
+        assert.equal(turn.outcome, TurnOutcome.ESCALATED);
+        assert.ok(turn.reply.startsWith("To check a duplicate charge"));
+        assert.match(turn.reply, /bringing in the AcmeShip team/);
+    });
+
+    test("a handoff opens with its answer only when that answer is grounded", async () => {
+        for (const grounded of [true, false]) {
+            const env = stubEnvironment({
+                generate: async () => ({ type: "escalate", answer: "Refunds are available within 14 days.", text: "I'm bringing in the team." }),
+                validate: async () => ({ grounded, answersQuery: true, unsupportedClaims: [] }),
+            });
+            const turn = await agentFunctions.runTurn({ org, conversation, endUser: null, identityVerified: false, rawMessage: "I want a refund", history: [] });
+            assert.equal(turn.outcome, TurnOutcome.ESCALATED);
+            assert.equal(turn.reply, grounded ? "Refunds are available within 14 days.\n\nI'm bringing in the team." : "I'm bringing in the team.");
+            assert.equal(env.counts().validateCalls, 1);
+            while (originals.length) { const [t, n, v] = originals.pop(); t[n] = v; }
+        }
+    });
+});
+
+describe("conversation memory", () => {
+    test("chunks the last answers cited are re-fetched when this turn's search missed them", async () => {
+        const Chunk = require("../models/knowledge/chunk");
+        let asked = null;
+        stub(Chunk, "find", (query) => { asked = query.chunkId.$in; return { select: () => ({ lean: async () => [CHUNKS[2]] }) }; });
+        const history = [
+            { role: "USER", content: "refund?" },
+            { role: "ASSISTANT", content: "Refunds take 5 to 7 business days.", citations: [{ chunkId: "c2" }, { chunkId: "c1" }] },
+        ];
+        const carried = await agentFunctions._carryOverChunks({ orgId: "org_test", history, have: [{ chunkId: "c1" }] });
+        assert.deepEqual(asked, ["c2"], "only what this turn did not already retrieve");
+        assert.equal(carried[0].chunkId, "c2");
+        assert.deepEqual(await agentFunctions._carryOverChunks({ orgId: "org_test", history: [], have: [] }), []);
+    });
+
+    test("carried chunks reach generation and the validator", async () => {
+        let validated = "";
+        stubEnvironment({
+            generate: async () => answer("Refunds take 5 to 7 business days to appear."),
+            validate: async ({ messages }) => { validated = validationContext(messages); return ok; },
+        });
+        stub(agentFunctions, "_carryOverChunks", async () => [{ chunkId: "c_mem", headingPath: ["Billing", "Timing"], text: "Statement timing passage from the previous answer." }]);
+        const turn = await agentFunctions.runTurn({ org, conversation: { ...conversation, turnCount: 2 }, endUser: null, identityVerified: false, rawMessage: "and how long?",
+            history: [{ role: "USER", content: "refund?" }, { role: "ASSISTANT", content: "Refunds...", citations: [{ chunkId: "c_mem" }] }] });
+        assert.equal(turn.outcome, TurnOutcome.ANSWERED);
+        assert.match(validated, /Statement timing passage/);
+    });
+});
+
+describe("procedures as evidence", () => {
+    test("the validator sees the procedure the agent was told to follow", async () => {
+        let validated = "";
+        stubEnvironment({
+            generate: async () => answer("Open Plan & usage → Manage billing to cancel."),
+            validate: async ({ messages }) => { validated = validationContext(messages); return ok; },
+        });
+        stub(agentFunctions, "_loadProcedures", async () => ({ procedureId: "prc_cancel", name: "Cancel", steps: [] }));
+        stub(agentFunctions, "_renderProcedure", ({ procedure }) => procedure ? "1. Tell them: Plan & usage → Manage billing." : null);
+        await agentFunctions.runTurn({ org, conversation, endUser: null, identityVerified: false, rawMessage: "can I cancel anytime?", history: [] });
+        assert.match(validated, /PROCEDURE configured by the business[\s\S]*Manage billing/);
+    });
+});
+
 describe("neighbour expansion", () => {
     test("merges a top chunk with its neighbours into one passage that cites the matched chunk", async () => {
         stub(agentFunctions, "_fetchChunkRows", async () => CHUNKS);
@@ -320,7 +507,9 @@ describe("repair pass", () => {
         });
         const turn = await agentFunctions.runTurn({ org, conversation, endUser: null, identityVerified: false, rawMessage: "Refund policy?", history: [] });
         assert.equal(turn.outcome, TurnOutcome.ABSTAINED);
-        assert.deepEqual(env.counts(), { validateCalls: 2, generateCalls: 2 });
+        // answer, repair, then one fallback-decline attempt — never a second repair
+        assert.deepEqual(env.counts(), { validateCalls: 2, generateCalls: 3 });
+        assert.match(turn.reply, /not confident enough/, "a fallback that is not a decline leaves the fixed line");
         assert.equal(env.traces[0].repairAttempted, true);
         assert.equal(env.traces[0].repairSucceeded, false);
     });
@@ -332,12 +521,26 @@ describe("repair pass", () => {
         });
         const turn = await agentFunctions.runTurn({ org, conversation, endUser: null, identityVerified: false, rawMessage: "Refund policy?", history: [] });
         assert.equal(turn.outcome, TurnOutcome.ABSTAINED);
-        assert.deepEqual(env.counts(), { validateCalls: 1, generateCalls: 1 });
+        // no repair; the second generate is the fallback-decline attempt
+        assert.deepEqual(env.counts(), { validateCalls: 1, generateCalls: 2 });
         assert.equal(env.traces[0].repairAttempted, false);
 
         assert.equal(agentFunctions._isRepairable({ generation: { outcome: "ANSWERED", reply: "x", toolCalls: [] }, verdict: { grounded: false, answersQuery: true, unsupportedClaims: [] } }), false);
         assert.equal(agentFunctions._isRepairable({ generation: { outcome: "ANSWERED", reply: "x", toolCalls: [], halted: true }, verdict: { grounded: false, answersQuery: true, unsupportedClaims: ["a"] } }), false);
         assert.equal(agentFunctions._isRepairable({ generation: { outcome: "ANSWERED", reply: "x", toolCalls: [] }, verdict: { grounded: false, answersQuery: true, unsupportedClaims: ["a"] } }), true);
+        // Accurate but off-target gets one pass at answering what was asked.
+        assert.equal(agentFunctions._isRepairable({ generation: { outcome: "ANSWERED", reply: "x", toolCalls: [] }, verdict: { grounded: true, answersQuery: false, unsupportedClaims: [] } }), true);
+    });
+
+    test("an off-target repair that concludes the context cannot answer is shown as its decline", async () => {
+        const env = stubEnvironment({
+            generate: async ({ call }) => call === 1 ? answer("Refunds take 5 to 7 business days to appear.") : { type: "decline", text: "I don't have that in my notes — want me to bring in the team?" },
+            validate: async () => ({ grounded: true, answersQuery: false, unsupportedClaims: [] }),
+        });
+        const turn = await agentFunctions.runTurn({ org, conversation, endUser: null, identityVerified: false, rawMessage: "Are you GDPR compliant?", history: [] });
+        assert.equal(turn.outcome, TurnOutcome.ABSTAINED);
+        assert.match(turn.reply, /bring in the team/);
+        assert.deepEqual(env.counts(), { validateCalls: 1, generateCalls: 2 });
     });
 });
 

@@ -134,6 +134,10 @@ module.exports = {
        ANSWER_MODEL is an env override for that reason — anthropic/claude-haiku-4.5
        and anthropic/claude-sonnet-5 are both a restart away. */
     ANSWER_MODEL: process.env.ANSWER_MODEL || "openai/gpt-5.6-luna",
+    // Stage 5's grounding check. Defaults to SMALL_MODEL; separate because a
+    // validator that wrongly rejects a correct answer costs the visitor an
+    // answer, and that is worth measuring per model on its own.
+    VALIDATOR_MODEL: process.env.VALIDATOR_MODEL || process.env.SMALL_MODEL || "openai/gpt-5.6-luna",
     // Retried once when the primary model 5xxes or the request fails outright
     // (§8.3). Chat only — see the note on LlmFunctions.complete for why
     // embeddings must never fall back.
@@ -205,6 +209,9 @@ module.exports = {
         "anthropic/claude-sonnet-5": { input: 2, output: 10 },
         "openai/gpt-5-mini": { input: 0.25, output: 2 },
         "openai/gpt-5": { input: 1.25, output: 10 },
+        "anthropic/claude-haiku-5.5": { input: 0.1, output: 0.5 },
+        "openai/gpt-6-luna": { input: 0.1, output: 0.5 },
+        "anthropic/claude-sonnet-5.5": { input: 2, output: 10 },
     },
 
     // ── Billing ──────────────────────────────────────────────────────

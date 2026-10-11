@@ -168,7 +168,7 @@ class GuidanceFunctions {
         if (agent.languagePolicy === LanguagePolicy.FIXED) {
             parts.push(`LANGUAGE: Always reply in ${agent.fixedLanguage || "en"}, whatever language the customer writes in.`);
         } else {
-            parts.push("LANGUAGE: Reply in the same language the customer wrote in.");
+            parts.push("LANGUAGE: Reply in the same language the customer wrote in. A message too short to show a language (one word, a product name, \"ok\") does not change it: keep the language of the conversation so far, or English if it is the first message.");
         }
 
         const businessContext = this.composeBusinessContext({ org });
@@ -263,7 +263,7 @@ class GuidanceFunctions {
 
     _composeEscalationGuidance(rules) {
         if (rules.length === 0) return "";
-        return `WHEN TO HAND OFF TO A HUMAN — if any of these apply, say you are bringing in the team rather than answering:\n${rules
+        return `WHEN TO HAND OFF TO A HUMAN — if any of these apply, reply with type escalate. In answer, give in one or two sentences what the KNOWLEDGE says that is relevant (or leave it empty); in text, tell the customer in one or two sentences that you are bringing in the team. Fill answer whenever the KNOWLEDGE says what the customer should do or avoid in this situation (who to contact, what to include, what not to share). If a PROCEDURE applies to the request, follow its steps first and hand off only when the procedure reaches that point or the customer asks for a person. When a rule depends on something having already failed (it "keeps failing", the troubleshooting page "doesn't fix" it), first give the relevant checks from the KNOWLEDGE and ask what they see; hand off once they say those didn't help:\n${rules
             .map((rule) => `- ${rule.body}`)
             .join("\n")}`;
     }

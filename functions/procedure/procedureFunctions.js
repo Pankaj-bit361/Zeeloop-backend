@@ -418,7 +418,7 @@ Rules:
                             .join("\n")}\n\nCUSTOMER MESSAGE: ${query}`,
                     },
                 ],
-                maxTokens: 128,
+                maxTokens: 512,
             });
 
             const chosen = result.json.procedureId;
