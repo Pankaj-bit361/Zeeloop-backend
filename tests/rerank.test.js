@@ -47,3 +47,16 @@ test("an OpenRouter error throws, so the pipeline falls back to fusion order", a
     global.fetch = async () => ({ ok: false, status: 503, text: async () => "upstream down" });
     await assert.rejects(llmFunctions.rerank({ query: "q", documents: ["a"] }), /rerank failed/);
 });
+
+test("decide posts to OpenRouter's alpha decisions endpoint and returns the answers", async () => {
+    config.OPENROUTER_API_KEY = "sk-or-test";
+    let seen = null;
+    global.fetch = async (url, init) => {
+        seen = { url, body: JSON.parse(init.body) };
+        return { ok: true, json: async () => ({ answers: { intent: { choice: "QUESTION" } }, usage: { input_tokens: 359, output_tokens: 43 } }) };
+    };
+    const result = await llmFunctions.decide({ model: "typesafe/jev-1.13", state: { customer_message: "hi" }, questions: { intent: { type: "choice" } } });
+    assert.equal(seen.url, config.OPENROUTER_BASE_URL.replace(/\/v1\/?$/, "") + "/alpha/decisions");
+    assert.equal(seen.body.model, "typesafe/jev-1.13");
+    assert.deepEqual(result, { answers: { intent: { choice: "QUESTION" } }, inputTokens: 359, outputTokens: 43 });
+});

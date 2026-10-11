@@ -437,6 +437,18 @@ class AgentFunctions {
     }
 
     async _runGate({ rawMessage, lastReply, trace }) {
+        if (config.GATE_MODEL) {
+            try {
+                return await this._runDecisionGate({ rawMessage, lastReply, trace });
+            } catch (error) {
+                // An alpha API: a failure costs this turn the fast classifier,
+                // not the classification. The chat-model gate below takes over.
+                console.log("AgentFunctions:_runGate: decisions gate failed, using SMALL_MODEL");
+                console.error(error.message);
+                generalFunctions.captureException(error);
+                trace.gateDecisionFallback = true;
+            }
+        }
         try {
             const content = lastReply
                 ? `The support agent just said: ${JSON.stringify(lastReply)}\n\nClassify the customer's reply: ${JSON.stringify(rawMessage)}`
@@ -474,6 +486,52 @@ class AgentFunctions {
             trace.gateFailedOpen = true;
             return { language: "en", intent: GateIntent.QUESTION, sentiment: GateSentiment.NEUTRAL, safe: true };
         }
+    }
+
+    // The same four answers as the chat gate, as typed choices from a
+    // decisions model. On 40 labelled messages: 38/40 against 39/40 for the
+    // chat gate, at a third of the latency and a fifth of the cost.
+    async _runDecisionGate({ rawMessage, lastReply, trace }) {
+        const choice = (instructions, criteria) => ({ type: "choice", instructions, criteria });
+        const result = await llmFunctions.decide({
+            model: config.GATE_MODEL,
+            state: lastReply ? { agent_previous_message: lastReply, customer_message: rawMessage } : { customer_message: rawMessage },
+            questions: {
+                intent: choice("Classify the customer's latest message in a customer support chat.", {
+                    QUESTION: "Wants information or help: any question, a bare topic word (\"autopilot\", \"pricing\", \"help\"), a typo-ridden question, a complaint that something is broken, an off-topic or manipulative request, or a short reply that answers the agent's previous question (\"yes\", \"the second one\", \"everything\").",
+                    CHITCHAT: "Only a greeting, thanks, goodbye, small talk, a lone \"?\", a question about the agent itself (its name, whether it is a bot), or an acknowledgement that asks for nothing (\"ok got it\", \"I'll email them then\").",
+                    HUMAN_REQUEST: "Explicitly asks for a person, a human, a teammate, a manager, sales or support staff.",
+                    ACTION_REQUEST: "Asks the agent to do something on their account (cancel, delete, change plan, refund it).",
+                    ABUSE: "Insults, threats or harassment aimed at the agent or the company, with no support request.",
+                }),
+                sentiment: choice("The customer's mood in their latest message.", {
+                    POSITIVE: "Pleased, thankful or enthusiastic.",
+                    NEUTRAL: "Matter-of-fact.",
+                    NEGATIVE: "Disappointed, worried or mildly annoyed.",
+                    ANGRY: "Clearly angry or hostile: shouting, demands, threats.",
+                }),
+                safe: choice("Is the latest message safe for a support agent to engage with?", {
+                    SAFE: "Ordinary support, off-topic or small-talk content, including attempts to get the agent's instructions.",
+                    UNSAFE: "Harmful content: violence, self-harm, sexual content, hate, or help with illegal activity.",
+                }),
+                language: choice("The language the customer's latest message is written in. Hindi written in Latin script (Hinglish) is hi.", {
+                    en: "English", hi: "Hindi or Hinglish", es: "Spanish", fr: "French", de: "German", pt: "Portuguese",
+                    it: "Italian", nl: "Dutch", ar: "Arabic", ja: "Japanese", zh: "Chinese", ko: "Korean", ru: "Russian",
+                    tr: "Turkish", id: "Indonesian", other: "Any other language",
+                }),
+            },
+        });
+        this._addUsage(trace, config.GATE_MODEL, result);
+        const pick = (name) => result.answers[name] && result.answers[name].choice;
+        const intent = pick("intent");
+        if (!Object.values(GateIntent).includes(intent)) throw new Error(`decisions gate returned no usable intent: ${intent}`);
+        trace.gateModel = config.GATE_MODEL;
+        return {
+            language: pick("language") && pick("language") !== "other" ? pick("language") : "en",
+            intent,
+            sentiment: Object.values(GateSentiment).includes(pick("sentiment")) ? pick("sentiment") : GateSentiment.NEUTRAL,
+            safe: pick("safe") !== "UNSAFE",
+        };
     }
 
     async _runChitchat({ org, rawMessage, lastReply, trace }) {

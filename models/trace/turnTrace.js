@@ -28,6 +28,9 @@ const turnTraceSchema = new mongoose.Schema(
         fallbackDecline: { type: Boolean, default: false },
         // chunks cited by the previous answers, added to this turn's context
         carriedChunkCount: { type: Number, default: 0 },
+        // GATE_MODEL in use, and whether it failed over to SMALL_MODEL
+        gateModel: { type: String, default: null },
+        gateDecisionFallback: { type: Boolean, default: false },
 
         candidateCount: { type: Number, default: 0 },
         topChunks: {

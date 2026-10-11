@@ -416,6 +416,52 @@ describe("procedures as evidence", () => {
     });
 });
 
+describe("decisions gate (GATE_MODEL)", () => {
+    const withGateModel = async (model, fn) => {
+        const previous = config.GATE_MODEL;
+        config.GATE_MODEL = model;
+        try { await fn(); } finally { config.GATE_MODEL = previous; }
+    };
+
+    test("a decisions model classifies the turn, with the previous agent message as state", async () => {
+        await withGateModel("typesafe/jev-1.13", async () => {
+            let sent = null;
+            stub(llmFunctions, "decide", async (args) => {
+                sent = args;
+                return { answers: { intent: { choice: "QUESTION" }, sentiment: { choice: "ANGRY" }, safe: { choice: "SAFE" }, language: { choice: "hi" } }, inputTokens: 300, outputTokens: 40 };
+            });
+            const trace = { inputTokens: 0, outputTokens: 0, costUsd: 0 };
+            const gate = await agentFunctions._runGate({ rawMessage: "yeah everything", lastReply: "Research, writing or publishing?", trace });
+            assert.deepEqual(gate, { language: "hi", intent: "QUESTION", sentiment: "ANGRY", safe: true });
+            assert.equal(sent.model, "typesafe/jev-1.13");
+            assert.equal(sent.state.agent_previous_message, "Research, writing or publishing?");
+            assert.deepEqual(Object.keys(sent.questions).sort(), ["intent", "language", "safe", "sentiment"]);
+            assert.equal(trace.gateModel, "typesafe/jev-1.13");
+        });
+    });
+
+    test("a decisions-gate failure falls back to the chat-model gate for that turn", async () => {
+        await withGateModel("typesafe/jev-1.13", async () => {
+            stub(llmFunctions, "decide", async () => { throw new Error("alpha endpoint down"); });
+            stub(llmFunctions, "completeJson", async () => ({ json: { language: "en", intent: "CHITCHAT", sentiment: "NEUTRAL", safe: true }, inputTokens: 1, outputTokens: 1 }));
+            const trace = { inputTokens: 0, outputTokens: 0, costUsd: 0 };
+            const gate = await agentFunctions._runGate({ rawMessage: "hey", trace });
+            assert.equal(gate.intent, "CHITCHAT");
+            assert.equal(trace.gateDecisionFallback, true);
+        });
+    });
+
+    test("an unusable intent from the decisions model also falls back", async () => {
+        await withGateModel("typesafe/jev-1.13", async () => {
+            stub(llmFunctions, "decide", async () => ({ answers: { intent: { choice: "SOMETHING_ELSE" } } }));
+            stub(llmFunctions, "completeJson", async () => ({ json: { language: "en", intent: "QUESTION", sentiment: "NEUTRAL", safe: true }, inputTokens: 1, outputTokens: 1 }));
+            const trace = { inputTokens: 0, outputTokens: 0, costUsd: 0 };
+            assert.equal((await agentFunctions._runGate({ rawMessage: "pricing", trace })).intent, "QUESTION");
+            assert.equal(trace.gateDecisionFallback, true);
+        });
+    });
+});
+
 describe("neighbour expansion", () => {
     test("merges a top chunk with its neighbours into one passage that cites the matched chunk", async () => {
         stub(agentFunctions, "_fetchChunkRows", async () => CHUNKS);

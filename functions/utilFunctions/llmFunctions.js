@@ -333,6 +333,38 @@ class LlmFunctions {
         return data.data.map((item) => ({ index: item.index, score: item.relevance_score }));
     }
 
+    // OpenRouter's decisions API (alpha): a typed choice per question instead
+    // of free text. `questions` maps a name to { type: "choice", instructions,
+    // criteria: { OPTION: description } }; answers come back keyed the same.
+    async decide({ model, state, questions }) {
+        console.log("LlmFunctions:decide: model:", model);
+        const base = String(config.OPENROUTER_BASE_URL).replace(/\/v1\/?$/, "");
+        const response = await fetch(`${base}/alpha/decisions`, {
+            signal: AbortSignal.timeout(10_000),
+            method: "POST",
+            headers: {
+                Authorization: `Bearer ${config.OPENROUTER_API_KEY}`,
+                "content-type": "application/json",
+                "HTTP-Referer": "https://app.greta.sh",
+                "X-Title": "Greta",
+            },
+            body: JSON.stringify({ model, state, questions }),
+        });
+        if (!response.ok) {
+            const body = await response.text();
+            throw new LlmError("openrouter", `decide failed: ${body.slice(0, 500)}`, response.status);
+        }
+        const data = await response.json();
+        if (!data.answers || typeof data.answers !== "object") {
+            throw new LlmError("openrouter", "decide failed: no answers in response", 502);
+        }
+        return {
+            answers: data.answers,
+            inputTokens: (data.usage && data.usage.input_tokens) || 0,
+            outputTokens: (data.usage && data.usage.output_tokens) || 0,
+        };
+    }
+
     // OpenRouter serves Voyage and Cohere rerankers on the chat key, so no
     // separate Voyage account is needed. Same result shape as the direct path.
     async _rerankViaOpenRouter({ query, documents, topN }) {
