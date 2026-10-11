@@ -158,9 +158,12 @@ module.exports = {
     GEMINI_EMBED_MODEL: process.env.GEMINI_EMBED_MODEL || "gemini-embedding-2",
     // batchEmbedContents caps how many inputs one request may carry.
     GEMINI_EMBED_BATCH_SIZE: Number(process.env.GEMINI_EMBED_BATCH_SIZE || 100),
-    // Optional. No key → rerank throws → pipeline degrades to fusion order.
+    // Rerank goes through OpenRouter (same key as chat) unless a direct
+    // Voyage key is set, in which case Voyage is called directly with
+    // RERANK_MODEL. If both fail, the pipeline degrades to fusion order.
     VOYAGE_API_KEY: process.env.VOYAGE_API_KEY || "",
     RERANK_MODEL: "rerank-2.5",
+    OPENROUTER_RERANK_MODEL: process.env.OPENROUTER_RERANK_MODEL || "voyageai/rerank-3",
     EMBEDDING_DIM: 1024,
 
     // Retrieval
@@ -206,6 +209,9 @@ module.exports = {
         "openai/gpt-5.6-luna": { input: 0.2, output: 1.2 },
         "openai/gpt-5.6-luna-pro": { input: 0.2, output: 1.2 },
         "anthropic/claude-haiku-4.5": { input: 1, output: 5 },
+        "anthropic/claude-haiku-5.5": { input: 0.1, output: 0.5 },
+        "openai/gpt-6-luna": { input: 0.1, output: 0.5 },
+        "anthropic/claude-sonnet-5.5": { input: 2, output: 10 },
         "anthropic/claude-sonnet-5": { input: 2, output: 10 },
         "openai/gpt-5-mini": { input: 0.25, output: 2 },
         "openai/gpt-5": { input: 1.25, output: 10 },

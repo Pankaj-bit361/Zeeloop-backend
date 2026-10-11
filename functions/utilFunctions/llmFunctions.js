@@ -114,8 +114,8 @@ class LlmFunctions {
             headers: {
                 Authorization: `Bearer ${config.OPENROUTER_API_KEY}`,
                 "content-type": "application/json",
-                "HTTP-Referer": "https://zealoop.com",
-                "X-Title": "Zealoop",
+                "HTTP-Referer": "https://app.greta.sh",
+                "X-Title": "Greta",
             },
             body: JSON.stringify({
                 model: model || config.SMALL_MODEL,
@@ -271,8 +271,8 @@ class LlmFunctions {
             headers: {
                 Authorization: `Bearer ${config.OPENROUTER_API_KEY}`,
                 "content-type": "application/json",
-                "HTTP-Referer": "https://zealoop.com",
-                "X-Title": "Zealoop",
+                "HTTP-Referer": "https://app.greta.sh",
+                "X-Title": "Greta",
             },
             body: JSON.stringify({
                 model: config.EMBED_MODEL,
@@ -307,9 +307,7 @@ class LlmFunctions {
     // order — rerank is an upgrade, not a dependency.
     async rerank({ query, documents, topN }) {
         console.log("LlmFunctions:rerank: docs:", documents.length);
-        if (!config.VOYAGE_API_KEY) {
-            throw new LlmError("voyage", "rerank skipped: VOYAGE_API_KEY not set", 503);
-        }
+        if (!config.VOYAGE_API_KEY) return this._rerankViaOpenRouter({ query, documents, topN });
         const response = await fetch("https://api.voyageai.com/v1/rerank", {
             signal: AbortSignal.timeout(10_000),
             method: "POST",
@@ -333,6 +331,39 @@ class LlmFunctions {
         const data = await response.json();
         // [{ index, relevance_score }] sorted best-first
         return data.data.map((item) => ({ index: item.index, score: item.relevance_score }));
+    }
+
+    // OpenRouter serves Voyage and Cohere rerankers on the chat key, so no
+    // separate Voyage account is needed. Same result shape as the direct path.
+    async _rerankViaOpenRouter({ query, documents, topN }) {
+        if (!config.OPENROUTER_API_KEY) {
+            throw new LlmError("openrouter", "rerank skipped: OPENROUTER_API_KEY not set", 503);
+        }
+        const response = await fetch(`${config.OPENROUTER_BASE_URL}/rerank`, {
+            signal: AbortSignal.timeout(10_000),
+            method: "POST",
+            headers: {
+                Authorization: `Bearer ${config.OPENROUTER_API_KEY}`,
+                "content-type": "application/json",
+                "HTTP-Referer": "https://app.greta.sh",
+                "X-Title": "Greta",
+            },
+            body: JSON.stringify({
+                model: config.OPENROUTER_RERANK_MODEL,
+                query,
+                documents,
+                top_n: topN || config.RERANK_TOP_N,
+            }),
+        });
+        if (!response.ok) {
+            const body = await response.text();
+            throw new LlmError("openrouter", `rerank failed: ${body}`, response.status);
+        }
+        const data = await response.json();
+        if (!Array.isArray(data.results)) {
+            throw new LlmError("openrouter", "rerank failed: no results in response", 502);
+        }
+        return data.results.map((item) => ({ index: item.index, score: item.relevance_score }));
     }
 }
 
