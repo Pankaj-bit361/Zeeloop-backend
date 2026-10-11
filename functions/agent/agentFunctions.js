@@ -462,6 +462,7 @@ class AgentFunctions {
                     "HUMAN_REQUEST: only when the customer explicitly asks for a person, a human, a teammate, sales or support staff.",
                     "ACTION_REQUEST: the customer asks the agent to do something on their account.",
                     "When the agent's last message asked the customer something, a short reply that answers it (\"yes\", \"the second one\", \"everything\") is a QUESTION, not CHITCHAT.",
+                    "A customer restating how the product works (\"ok so it opens PRs with a token\", \"got it, so it's a global setting\") is a QUESTION: it needs checking, not agreeing with.",
                 ].join("\n"),
                 schemaHint: `{"language": "ISO 639-1", "intent": "${Object.values(GateIntent).join("|")}", "sentiment": "${Object.values(GateSentiment).join("|")}", "safe": boolean}`,
                 messages: [{ role: "user", content }],
@@ -498,8 +499,8 @@ class AgentFunctions {
             state: lastReply ? { agent_previous_message: lastReply, customer_message: rawMessage } : { customer_message: rawMessage },
             questions: {
                 intent: choice("Classify the customer's latest message in a customer support chat.", {
-                    QUESTION: "Wants information or help: any question, a bare topic word (\"autopilot\", \"pricing\", \"help\"), a typo-ridden question, a complaint that something is broken, an off-topic or manipulative request, or a short reply that answers the agent's previous question (\"yes\", \"the second one\", \"everything\").",
-                    CHITCHAT: "Only a greeting, thanks, goodbye, small talk, a lone \"?\", a question about the agent itself (its name, whether it is a bot), or an acknowledgement that asks for nothing (\"ok got it\", \"I'll email them then\").",
+                    QUESTION: "Wants information or help: any question, a bare topic word (\"autopilot\", \"pricing\", \"help\"), a typo-ridden question, a complaint that something is broken, an off-topic or manipulative request, a short reply that answers the agent's previous question (\"yes\", \"the second one\", \"everything\"), or a summary of how the product works that the customer wants confirmed (\"ok so it opens PRs with a token\", \"so it's a global setting?\").",
+                    CHITCHAT: "Only a greeting, thanks, goodbye, small talk, a lone \"?\", a question about the agent itself (its name, whether it is a bot), or an acknowledgement that asks for nothing and states nothing about the product (\"ok got it\", \"I'll email them then\").",
                     HUMAN_REQUEST: "Explicitly asks for a person, a human, a teammate, a manager, sales or support staff.",
                     ACTION_REQUEST: "Asks the agent to do something on their account (cancel, delete, change plan, refund it).",
                     ABUSE: "Insults, threats or harassment aimed at the agent or the company, with no support request.",
@@ -540,7 +541,7 @@ class AgentFunctions {
             // answered as a reply, not with a fresh "How can I help you today?".
             const result = await llmFunctions.complete({
                 model: config.SMALL_MODEL,
-                system: `You are ${org.agent.name}, the friendly support agent for ${org.name}. Reply to this greeting or pleasantry in one or two short sentences, in the customer's language. If you already said something earlier in the conversation, reply as its continuation rather than greeting them again. Do not invent product facts.`,
+                system: `You are ${org.agent.name}, the friendly support agent for ${org.name}. Reply to this greeting or pleasantry in one or two short sentences, in the customer's language. If you already said something earlier in the conversation, reply as its continuation rather than greeting them again. Do not invent product facts, and never confirm or deny a statement the customer makes about the product ("Exactly", "That's right"): acknowledge it and offer to help further instead.`,
                 messages: [...(lastReply ? [{ role: "assistant", content: lastReply }] : []), { role: "user", content: rawMessage }],
                 maxTokens: 512,
             });
