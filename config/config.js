@@ -372,6 +372,10 @@ module.exports = {
     LOG_LEVEL: process.env.LOG_LEVEL || "info",
 
     CORS_DASHBOARD_ORIGINS: (process.env.CORS_DASHBOARD_ORIGINS || "http://localhost:5173").split(","),
+    // Zealoop staff who may open /admin (routes/adminRoutes.js): every workspace,
+    // its plan and usage, and the changes support makes to one. Empty means
+    // nobody, which is the direction a missing variable should fail in.
+    ADMIN_EMAILS: (process.env.ADMIN_EMAILS || "").split(",").map((email) => email.trim().toLowerCase()).filter(Boolean),
     JSON_BODY_LIMIT: "1mb",
     RESOLUTION_CRON: "*/15 * * * *",
     RESOLUTION_WINDOW_HOURS: 24,

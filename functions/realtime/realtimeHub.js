@@ -29,6 +29,7 @@
 const { WebSocketServer } = require("ws");
 const Conversation = require("../../models/conversation/conversation");
 const Org = require("../../models/org/org");
+const { isSuspended } = require("../admin/suspension");
 const RealtimeEvent = require("../../models/conversation/realtimeEvent");
 const crypto = require("node:crypto");
 const { clientIp } = require("../../middlewares/rateLimit");
@@ -185,8 +186,8 @@ function attach(server) {
         try {
             const url = new URL(req.url, "http://localhost");
             const publicKey = url.searchParams.get("pk");
-            const org = publicKey ? await Org.findOne({ publicKey }).select("orgId").lean() : null;
-            if (!org) {
+            const org = publicKey ? await Org.findOne({ publicKey }).select("orgId suspended").lean() : null;
+            if (!org || isSuspended(org)) {
                 send(ws, { type: "error", error: "Unknown publicKey" });
                 ws.close(1008, "unknown publicKey");
                 return;

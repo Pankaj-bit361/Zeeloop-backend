@@ -212,7 +212,8 @@ class InboundEmailFunctions {
         // indexed. Workspaces number in the thousands, not the millions, and the
         // alternative is storing a token that can fall out of sync with the key
         // that generates it.
-        const orgs = await Org.find({}).select("orgId name credits ownerEmail agent widget escalation businessContext").lean();
+        // A suspended workspace gets no replies by email either.
+        const orgs = await Org.find({ "suspended.at": null }).select("orgId name credits ownerEmail agent widget escalation businessContext").lean();
         return orgs.find((org) => this._inboundToken({ orgId: org.orgId }) === token) || null;
     }
 

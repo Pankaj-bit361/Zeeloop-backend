@@ -37,7 +37,7 @@ async function main() {
         PORT: String(port), API_URL: base, TEST_BASE_URL: base, APP_URL: "http://localhost:4176", CORS_DASHBOARD_ORIGINS: "http://localhost:4176",
         SESSION_SECRET: crypto.randomBytes(32).toString("hex"), JWT_SECRET: crypto.randomBytes(32).toString("hex"), ENCRYPTION_KEY: crypto.randomBytes(32).toString("hex"),
         ENABLE_DEV_LOGIN: "true", ALLOW_DEV_AUTH_LINKS: "true", ALLOW_TEST_LOOPBACK: "true", ALLOW_INSECURE_DEFAULTS: "false", ALLOW_INSECURE_WEBHOOKS: "false",
-        DISABLE_SIGNUPS: "false", NEW_RELIC_ENABLED: "false", NEW_RELIC_LICENSE_KEY: "", LOG_FORMAT: "pretty",
+        DISABLE_SIGNUPS: "false", ADMIN_EMAILS: "staff@zealoop.test", NEW_RELIC_ENABLED: "false", NEW_RELIC_LICENSE_KEY: "", LOG_FORMAT: "pretty",
         OPENROUTER_API_KEY: "local-provider-fixture", OPENROUTER_BASE_URL: `http://127.0.0.1:${provider.address().port}`,
         GEMINI_API_KEY: "", VOYAGE_API_KEY: "", EMAIL_API_KEY: "", BRANDFETCH_API_KEY: "", SENTRY_DSN: "",
         RAZORPAY_KEY_ID: "", RAZORPAY_KEY_SECRET: "", RAZORPAY_WEBHOOK_SECRET: "test_webhook_secret",

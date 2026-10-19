@@ -6,6 +6,7 @@ const InstallToken = require("../models/security/installToken");
 const Account = require("../models/user/account");
 const Member = require("../models/org/member");
 const Org = require("../models/org/org");
+const { SUSPENDED } = require("../functions/admin/suspension");
 const { MemberStatus } = require("../config/enums");
 const { reqOrgOwnerAuth, requireRole, OWNER_OR_ADMIN } = require("../middlewares/auth");
 const { consumeShared, clientIp } = require("../middlewares/rateLimit");
@@ -44,6 +45,7 @@ endpoint.use(async (req, res, next) => {
         if (connection) {
             const limit = await consumeShared(`mcp:token:${connection.tokenId}`, 60, 60_000);
             if (!limit.allowed) { res.setHeader("Retry-After", String(limit.retryAfterSeconds)); return res.status(429).json({ error: "MCP connection request limit reached" }); }
+            if (await Org.exists({ orgId: connection.orgId, "suspended.at": { $ne: null } })) return res.status(403).json(SUSPENDED);
             req.installOrgId = connection.orgId;
             req.mcpAuth = connection;
             return next();
@@ -57,6 +59,7 @@ endpoint.use(async (req, res, next) => {
             res.setHeader("WWW-Authenticate", `${oauth.CHALLENGE}, error="invalid_token"`);
             return res.status(401).json({ error: "Connect by signing in to Zealoop, or use a valid installation token" });
         }
+        if (await Org.exists({ orgId: row.orgId, "suspended.at": { $ne: null } })) return res.status(403).json(SUSPENDED);
         const limit = await consumeShared(`mcp:token:${row.tokenId}`, 60, 60_000);
         if (!limit.allowed) { res.setHeader("Retry-After", String(limit.retryAfterSeconds)); return res.status(429).json({ error: "Installation token request limit reached" }); }
         req.installOrgId = row.orgId;

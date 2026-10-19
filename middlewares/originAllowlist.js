@@ -1,6 +1,7 @@
 const Org = require("../models/org/org");
 const generalFunctions = require("../functions/utilFunctions/generalFunctions");
 const securityFunctions = require("../functions/security/securityFunctions");
+const { SUSPENDED, isSuspended } = require("../functions/admin/suspension");
 
 // §8.4 — origin allowlist per workspace, so a stolen embed id cannot be used
 // from another domain.
@@ -30,8 +31,10 @@ async function enforceOriginAllowlist(req, res, next) {
         const publicKey = _publicKey(req);
         if (!publicKey) return next();
 
-        const org = await Org.findOne({ publicKey }).select("orgId widget").lean();
+        const org = await Org.findOne({ publicKey }).select("orgId widget suspended").lean();
         if (!org) return next();
+        // A suspended workspace is the one refusal here that is not about origin.
+        if (isSuspended(org)) return res.status(403).json(SUSPENDED);
 
         const verdict = securityFunctions.isOriginAllowed({ org, origin: req.get("origin") });
         if (verdict.allowed) return next();

@@ -179,6 +179,14 @@ const orgSchema = new mongoose.Schema(
             // default value.
             conversationsLimit: { type: Number, default: () => getPlan(PlanId.FREE).limits.conversations },
         },
+        // Set by Zealoop staff from the admin panel (functions/admin). While set,
+        // the widget, the dashboard, the API and MCP all refuse this workspace;
+        // nothing is deleted, so lifting it puts everything back as it was.
+        suspended: {
+            at: { type: Date, default: null },
+            reason: { type: String, default: "" },
+            by: { type: String, default: "" },
+        },
     },
     {
         timestamps: true,

@@ -4,6 +4,8 @@ const Account = require("../models/user/account");
 const generalFunctions = require("../functions/utilFunctions/generalFunctions");
 const sessionFunctions = require("../functions/utilFunctions/sessionFunctions");
 const Member = require("../models/org/member");
+const Org = require("../models/org/org");
+const { SUSPENDED } = require("../functions/admin/suspension");
 const { MemberRole, MemberStatus } = require("../config/enums");
 
 /* Org auth: Bearer JWT whose orgId must match the path orgId.
@@ -62,6 +64,11 @@ async function reqOrgOwnerAuth(req, res, next) {
             // access was removed does not need to be told whether the seat is
             // gone or merely suspended.
             return res.status(401).json({ success: false, error: "Invalid or expired token" });
+        }
+
+        // Org tokens live an hour; a suspension has to bite before they expire.
+        if (await Org.exists({ orgId: payload.orgId, "suspended.at": { $ne: null } })) {
+            return res.status(403).json(SUSPENDED);
         }
 
         req.auth = {
