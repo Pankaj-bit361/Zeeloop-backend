@@ -15,10 +15,11 @@ on:
   push:
     branches: [main, 'codex/**']
   pull_request:
-  # Weekly, because a dependency that was clean on Monday can have a CVE by
-  # Friday and nothing about this repo will have changed.
+  # Nightly at 02:00 IST: the suite catches drift (a dependency, a provider, a
+  # date) even on days nothing is merged. It covers the weekly audit too.
   schedule:
-    - cron: "0 6 * * 1"
+    - cron: "30 20 * * *"
+  workflow_dispatch:
 
 jobs:
   test:
@@ -73,6 +74,18 @@ jobs:
           name: widget-browser-proof
           path: test-results/
           if-no-files-found: ignore
+
+      - name: Alert on failure
+        if: failure() && github.event_name != 'pull_request'
+        env:
+          ALERT_WEBHOOK_URL: ${{ secrets.ALERT_WEBHOOK_URL }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          [ -z "$ALERT_WEBHOOK_URL" ] && { echo "ALERT_WEBHOOK_URL is not set; skipping the alert."; exit 0; }
+          text="❌ Zealoop backend tests failed on ${GITHUB_REF_NAME} (${GITHUB_EVENT_NAME})"$'\n'"$RUN_URL"
+          # `text` is Slack's field and `content` is Discord's; each ignores the other.
+          curl -sS -X POST -H 'content-type: application/json' \
+            -d "$(jq -n --arg t "$text" '{text: $t, content: $t}')" "$ALERT_WEBHOOK_URL"
 
   audit:
     runs-on: ubuntu-latest
