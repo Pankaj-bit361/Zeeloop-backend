@@ -221,6 +221,34 @@ class AuthFunctions {
         }
     }
 
+    // GET /api/auth/support-identity — who the dashboard's own Zealoop chat
+    // should say this is. The signature is the identify() HMAC of the email,
+    // made with the support workspace's widget secret (the zealoop.com
+    // workspace, SUPPORT_WIDGET_PUBLIC_KEY) — read here, so it never reaches a
+    // browser and needs no copy in an env var. An unverified address, or a
+    // server without that workspace, gets no signature: the chat stays
+    // anonymous rather than trusting an email nobody proved.
+    async supportIdentity({ account }) {
+        console.log("AuthFunctions:supportIdentity: accountId:", account && account.accountId);
+        try {
+            if (!account) {
+                return { status: 401, json: { success: false, error: "Not signed in" } };
+            }
+            let signature = null;
+            if (account.emailVerifiedAt && config.SUPPORT_WIDGET_PUBLIC_KEY) {
+                const org = await Org.findOne({ publicKey: config.SUPPORT_WIDGET_PUBLIC_KEY }).select("widgetSecret").lean();
+                const widgetSecret = org ? generalFunctions.safeDecrypt(org.widgetSecret) : null;
+                if (widgetSecret) signature = generalFunctions.createIdentityHmac({ widgetSecret, email: account.email });
+            }
+            return { status: 200, json: { success: true, data: { email: account.email, name: account.name || null, signature } } };
+        } catch (error) {
+            console.error("AuthFunctions:supportIdentity: Catch block");
+            console.error(error);
+            generalFunctions.captureException(error);
+            return { status: 500, json: { success: false, error: GENERIC_ERROR } };
+        }
+    }
+
     // POST /api/auth/token — exchange the session for an org-scoped JWT.
     //
     // This is the only place an org token is minted for a real user, and the

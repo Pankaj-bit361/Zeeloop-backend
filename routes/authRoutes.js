@@ -84,6 +84,17 @@ router.patch("/me", reqSessionAuth, async (req, res) => {
     }
 });
 
+// The dashboard's own support chat: the signed-in user's email and its
+// identify() signature (authFunctions.supportIdentity).
+router.get("/support-identity", reqSessionAuth, async (req, res) => {
+    try {
+        const { status, json } = await authFunctions.supportIdentity({ account: req.account });
+        return res.status(status).json(json);
+    } catch (error) {
+        return fail(req, res, error);
+    }
+});
+
 // Exchange the session for an org-scoped Bearer token. The membership check
 // lives in mintOrgToken.
 router.post("/token", reqSessionAuth, async (req, res) => {
