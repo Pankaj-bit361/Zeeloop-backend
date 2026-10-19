@@ -376,6 +376,10 @@ module.exports = {
     // its plan and usage, and the changes support makes to one. Empty means
     // nobody, which is the direction a missing variable should fail in.
     ADMIN_EMAILS: (process.env.ADMIN_EMAILS || "").split(",").map((email) => email.trim().toLowerCase()).filter(Boolean),
+    // The workspace behind the support chat on zealoop.com and in the dashboard
+    // (its public widget key). /api/auth/support-identity signs a signed-in
+    // user's email with that workspace's widget secret. Empty turns it off.
+    SUPPORT_WIDGET_PUBLIC_KEY: process.env.SUPPORT_WIDGET_PUBLIC_KEY ?? "pk_live_4a08c2e8bae2844c7ced4820",
     JSON_BODY_LIMIT: "1mb",
     RESOLUTION_CRON: "*/15 * * * *",
     RESOLUTION_WINDOW_HOURS: 24,
