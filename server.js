@@ -44,6 +44,7 @@ const publicApiRoutes = require("./routes/publicApiRoutes");
 const mcpRoutes = require("./routes/mcpRoutes");
 const mcpOAuthRoutes = require("./routes/mcpOAuthRoutes");
 const inboundEmailRoutes = require("./routes/inboundEmailRoutes");
+const adminRoutes = require("./routes/adminRoutes");
 const attributionFunctions = require("./functions/analytics/attributionFunctions");
 const subscriptionFunctions = require("./functions/billing/subscriptionFunctions");
 const qualityFunctions = require("./functions/eval/qualityFunctions");
@@ -456,6 +457,8 @@ app.use("/api/auth", dashboardCors, mcpOAuthRoutes.session);
 app.use(mcpOAuthRoutes.publicRoutes);
 app.use("/mcp", mcpRoutes.endpoint);
 app.use("/api/analytics", dashboardCors, analyticsRoutes);
+// Zealoop staff only (ADMIN_EMAILS); the session cookie, not an org token.
+app.use("/api/admin", dashboardCors, adminRoutes);
 
 // §5.6 — the customer-facing REST API. Deliberately NOT under /api/org: it is
 // authenticated by a scoped API key rather than by a dashboard session, it is

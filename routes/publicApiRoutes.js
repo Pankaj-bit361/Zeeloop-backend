@@ -10,6 +10,7 @@ const analyticsFunctions = require("../functions/analytics/analyticsFunctions");
 const knowledgeFunctions = require("../functions/knowledge/knowledgeFunctions");
 const generalFunctions = require("../functions/utilFunctions/generalFunctions");
 const { planHasFeature } = require("../config/plans");
+const { SUSPENDED, isSuspended } = require("../functions/admin/suspension");
 
 const router = express.Router();
 
@@ -83,9 +84,12 @@ function requireApiKey(...requiredScopes) {
                 });
             }
 
-            const org = await Org.findOne({ orgId: apiKey.orgId }).select("orgId name credits").lean();
+            const org = await Org.findOne({ orgId: apiKey.orgId }).select("orgId name credits suspended").lean();
             if (!org) {
                 return res.status(401).json({ success: false, error: "Invalid or revoked API key" });
+            }
+            if (isSuspended(org)) {
+                return res.status(403).json(SUSPENDED);
             }
             // Gated on the plan at request time, not only at key creation: a
             // workspace that downgrades must lose API access, and a key issued

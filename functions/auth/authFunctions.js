@@ -13,6 +13,7 @@ const sessionFunctions = require("../utilFunctions/sessionFunctions");
 const attributeFunctions = require("../config/attributeFunctions");
 const subscriptionFunctions = require("../billing/subscriptionFunctions");
 const emailFunctions = require("../email/emailFunctions");
+const { SUSPENDED, isSuspended } = require("../admin/suspension");
 
 const GENERIC_ERROR = "Internal server error, please contact support";
 // One message for "no such account" and "wrong password" alike. Two distinct
@@ -176,7 +177,15 @@ class AuthFunctions {
             }
             return {
                 status: 200,
-                json: { success: true, data: { user: this._publicAccount(account), orgs: orgs.orgs } },
+                json: {
+                    success: true,
+                    data: {
+                        user: this._publicAccount(account),
+                        orgs: orgs.orgs,
+                        // Shows the Admin link; the panel's own routes check again.
+                        isAdmin: Boolean(account.emailVerifiedAt) && config.ADMIN_EMAILS.includes(account.email),
+                    },
+                },
             };
         } catch (error) {
             console.error("AuthFunctions:me: Catch block");
@@ -241,6 +250,9 @@ class AuthFunctions {
             const org = await Org.findOne({ orgId }).lean();
             if (!org) {
                 return { status: 404, json: { success: false, error: "Workspace not found" } };
+            }
+            if (isSuspended(org)) {
+                return { status: 403, json: SUSPENDED };
             }
 
             // Stamp the seat on every open, not just the first. It is what
