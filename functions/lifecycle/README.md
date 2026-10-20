@@ -16,7 +16,7 @@ owner.js             who hears about a workspace (its owner) and their contact f
 hooks.js             inline events: sign-up, workspace, invites, security, billing, usage limits
 rules.js             what's due for a workspace from a snapshot (pure, tested)
 sweep.js             hourly: snapshot every workspace, announce what's due, remember it on Org.lifecycle
-emails/layout.js     the look: warm card, teal rule, EB Garamond headline, ink pill, wordmark with its dot
+emails/layout.js     the look, from zealoop.com: warm wash, light Inter headline, eyebrow pill, check lists, light code cards, Zea, mono figure captions
 emails/templates/    69 templates: start, trial, account, usage, billing, results, campaign bases
 emails/workflows.js  47 workflows: what to send, how long to wait, when to stop
 emails/sync.js       pushes templates and workflows into the Zealoop project in Volanea

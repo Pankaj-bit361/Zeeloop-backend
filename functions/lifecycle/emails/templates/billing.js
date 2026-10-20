@@ -9,7 +9,7 @@ const BILLING = [
     t("subscription-started", "Subscription started", "transactional", "billing.subscription_started", "Welcome to {{plan_name}}", {
         preheader: "{{limit_label}}, everything in the plan unlocked. Thank you.",
         eyebrow: "Subscription",
-        heading: "{{workspace}} is on {{plan_name}}",
+        heading: "{{workspace}} is on {{plan_name}}.",
         tint: "teal",
         body: [
             lead(hi),
@@ -25,7 +25,7 @@ const BILLING = [
     t("plan-upgraded", "Plan upgraded", "transactional", "billing.plan_upgraded", "You've moved up to {{plan_name}}", {
         preheader: "From {{from_plan}} to {{plan_name}}: {{limit_label}}.",
         eyebrow: "Subscription",
-        heading: "Upgraded to {{plan_name}}",
+        heading: "Upgraded to {{plan_name}}.",
         tint: "teal",
         body: [
             lead(hi),
@@ -39,7 +39,7 @@ const BILLING = [
     t("plan-downgraded", "Plan changed", "transactional", "billing.plan_downgraded", "Your plan is changing to {{plan_name}}", {
         preheader: "From {{from_plan}} to {{plan_name}}. Here's what that means for the workspace.",
         eyebrow: "Subscription",
-        heading: "Moving to {{plan_name}}",
+        heading: "Moving to {{plan_name}}.",
         tint: "sand",
         body: [
             lead(hi),
@@ -53,7 +53,7 @@ const BILLING = [
     t("payment-failed-1", "Payment failed", "transactional", "billing.payment_failed", "We couldn't take payment for {{workspace}}", {
         preheader: "Nothing is suspended. You have {{grace_days}} days to update your card.",
         eyebrow: "Billing",
-        heading: "Your payment didn't go through",
+        heading: "Your payment didn't go through.",
         tint: "sand",
         body: [
             lead(hi),
@@ -67,7 +67,7 @@ const BILLING = [
     t("payment-failed-2", "Payment still failing", "transactional", "billing.payment_failed", "Reminder: payment for {{workspace}} is still failing", {
         preheader: "Update your card before {{grace_ends_on}} to keep {{plan_name}}.",
         eyebrow: "Billing · Reminder",
-        heading: "Your payment is still failing",
+        heading: "Your payment is still failing.",
         tint: "clay",
         body: [
             lead(hi),
@@ -80,7 +80,7 @@ const BILLING = [
     t("payment-failed-3", "Payment final notice", "transactional", "billing.payment_failed", "Final notice: {{workspace}} moves to Free on {{grace_ends_on}}", {
         preheader: "Two days left to update your payment method.",
         eyebrow: "Billing · Final notice",
-        heading: "Two days to keep {{plan_name}}",
+        heading: "Two days to keep {{plan_name}}.",
         tint: "clay",
         body: [
             lead(hi),
@@ -94,7 +94,7 @@ const BILLING = [
     t("payment-recovered", "Payment received", "transactional", "billing.recovered", "Payment received — {{workspace}} is all set", {
         preheader: "Thanks for sorting it. Nothing changed for your visitors.",
         eyebrow: "Billing",
-        heading: "Payment received, thank you",
+        heading: "Payment received, thank you.",
         tint: "teal",
         body: [
             lead(hi),
@@ -107,7 +107,7 @@ const BILLING = [
     t("cancel-scheduled", "Cancellation scheduled", "transactional", "billing.cancel_scheduled", "Your {{plan_name}} plan ends on {{ends_on}}", {
         preheader: "Everything keeps working until then. Change your mind any time before.",
         eyebrow: "Subscription",
-        heading: "Cancellation confirmed",
+        heading: "Cancellation confirmed.",
         tint: "stone",
         body: [
             lead(hi),
@@ -125,7 +125,7 @@ const BILLING = [
     t("subscription-ended", "Subscription ended", "transactional", "billing.subscription_ended", "{{workspace}} has moved to the Free plan", {
         preheader: "Your agent still answers. Here's what changed.",
         eyebrow: "Subscription",
-        heading: "{{workspace}} is on the Free plan",
+        heading: "{{workspace}} is on the Free plan.",
         tint: "stone",
         body: [
             lead(hi),
@@ -139,7 +139,7 @@ const BILLING = [
     t("winback", "Come back", "marketing", "billing.subscription_ended", "Your Zealoop setup is still here", {
         preheader: "Everything you built is waiting. Pick a plan and it's all back in a minute.",
         eyebrow: "A note from the founder",
-        heading: "Everything you built is still here",
+        heading: "Everything you built is still here.",
         tint: "teal",
         body: [
             lead(hi),

@@ -13,7 +13,7 @@ const USAGE = [
     t("quota-near-free", "Limit almost reached (Free)", "transactional", "usage.quota_near", "{{workspace}} has used {{percent}} of its free conversations", {
         preheader: "{{used_label}} of {{limit_label}} this month. Resets {{resets_on}}.",
         eyebrow: "Usage · {{percent}}",
-        heading: "You're close to the Free limit",
+        heading: "You're close to the Free limit.",
         tint: "sand",
         body: [
             lead(hi),
@@ -29,7 +29,7 @@ const USAGE = [
     t("quota-near-paid", "Limit almost reached", "transactional", "usage.quota_near", "{{workspace}} has used {{percent}} of this period's conversations", {
         preheader: "{{used_label}} of {{limit_label}}. Resets {{resets_on}}.",
         eyebrow: "Usage · {{percent}}",
-        heading: "You've used {{percent}} of this period's conversations",
+        heading: "You've used {{percent}} of this period's conversations.",
         tint: "sand",
         body: [
             lead(hi),
@@ -43,7 +43,7 @@ const USAGE = [
     t("quota-reached-free", "Limit reached (Free)", "transactional", "usage.quota_reached", "{{workspace}} has reached its free conversation limit", {
         preheader: "Visitors are told your team will follow up until {{resets_on}}, or until you upgrade.",
         eyebrow: "Usage · Limit reached",
-        heading: "Your agent has paused answering",
+        heading: "Your agent has paused answering.",
         tint: "clay",
         body: [
             lead(hi),
@@ -59,7 +59,7 @@ const USAGE = [
     t("quota-reached-paid", "Limit reached", "transactional", "usage.quota_reached", "{{workspace}} has reached its conversation limit", {
         preheader: "Visitors are told your team will follow up until {{resets_on}}, or until you raise the limit.",
         eyebrow: "Usage · Limit reached",
-        heading: "Your agent has paused answering",
+        heading: "Your agent has paused answering.",
         tint: "clay",
         body: [
             lead(hi),
@@ -74,7 +74,7 @@ const USAGE = [
     t("cost-ceiling", "Usage ceiling reached", "transactional", "usage.cost_ceiling", "{{workspace}} hit its usage ceiling for this period", {
         preheader: "An unusually heavy month tripped the safety ceiling. Here's what it means.",
         eyebrow: "Usage",
-        heading: "Your workspace reached its safety ceiling",
+        heading: "Your workspace reached its safety ceiling.",
         tint: "clay",
         body: [
             lead(hi),
@@ -92,7 +92,7 @@ const USAGE = [
     t("upgrade-nudge", "Outgrowing Free", "marketing", "usage.heavy_free", "{{workspace}} is outgrowing the Free plan", {
         preheader: "{{used_label}} of {{limit_label}} already. Here's what the next plan adds.",
         eyebrow: "Plans",
-        heading: "Your visitors are using your agent",
+        heading: "Your visitors are using your agent.",
         tint: "teal",
         body: [
             lead(hi),
@@ -109,7 +109,7 @@ const USAGE = [
     t("source-failed", "Source failed", "transactional", "knowledge.source_failed", "{{source_name}} couldn't be synced", {
         preheader: "Your agent keeps answering from the last good copy. Here's what went wrong.",
         eyebrow: "Needs a look",
-        heading: "{{source_name}} couldn't be synced",
+        heading: "{{source_name}} couldn't be synced.",
         tint: "clay",
         body: [
             lead(hi),
@@ -128,7 +128,7 @@ const USAGE = [
     t("widget-silent", "Widget not seen", "transactional", "widget.silent", "We haven't seen the Zealoop widget on {{site}} for a week", {
         preheader: "Last seen {{last_seen_on}}. A redesign or a cookie banner usually explains it.",
         eyebrow: "Needs a look",
-        heading: "Your widget may have gone missing",
+        heading: "Your widget may have gone missing.",
         tint: "clay",
         body: [
             lead(hi),
@@ -146,7 +146,7 @@ const USAGE = [
     t("action-failing", "Action failing", "transactional", "action.failing", "{{action_name}} is failing", {
         preheader: "{{failures_label}} in the last day. The agent hands those conversations over instead.",
         eyebrow: "Needs a look",
-        heading: "{{action_name}} keeps failing",
+        heading: "{{action_name}} keeps failing.",
         tint: "clay",
         body: [
             lead(hi),

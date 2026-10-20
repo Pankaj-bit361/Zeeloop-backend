@@ -1,14 +1,15 @@
 "use strict";
-// The look of every lifecycle email Zealoop sends its customers — the same
-// editorial language as the dashboard: a warm off-white page, a white card
-// under a thin teal rule, an EB Garamond headline, an ink pill button, and the
-// wordmark with its teal dot.
+// The look of every lifecycle email Zealoop sends its customers, taken from
+// zealoop.com: a warm off-white page, a soft peach-and-blue wash behind the
+// headline, light Inter headlines set tight, the eyebrow in a white pill,
+// dark rounded buttons, check-marked lists, light code cards with window dots,
+// chat turns as the widget shows them, and small mono "Fig." captions.
 //
 // Email clients are the constraint, not the web: tables and inline styles
-// only, padding on the button's cell (Outlook ignores it on links), no images
-// to block, system fonts behind the brand ones, and one small <style> block
-// that only tightens spacing on phones. Colour scheme is declared light so
-// dark-mode clients that respect it leave the design alone.
+// only, padding on the button's cell (Outlook ignores it on links), Inter and
+// JetBrains Mono where the client loads web fonts and the system's own
+// otherwise, a solid colour behind the wash for clients that drop gradients,
+// and one small <style> block for phones.
 //
 // Copy lives in templates/; this file only knows how to dress it.
 // Placeholders like {{firstName | "there"}} are filled by Volanea at send time.
@@ -22,108 +23,98 @@ const SUPPORT = "hello@zealoop.com";
 // legal entity is final, then sync.
 const COMPANY_ADDRESS = "";
 
+// Zea, the agent, as the site's hero shows her.
+const ZEA = { src: `${SITE}/hero/zea-poster.jpg`, alt: "Zea, the Zealoop support agent" };
+
 const C = {
-    canvas: "#f6f5f1",
+    canvas: "#f7f7f4",
     card: "#ffffff",
-    ink: "#1a1a17",
-    inkStrong: "#262521",
-    body: "#56534c",
-    muted: "#7b776f",
-    soft: "#aaa69c",
-    hairline: "#e8e6df",
-    hairlineSoft: "#f2f1ec",
-    code: "#1c1b18",
-    codeText: "#e8e6df",
-    codeDim: "#9c978c",
+    ink: "#26251e",
+    body: "#5a5852",
+    muted: "#8a877e",
+    soft: "#b4b1a7",
+    hairline: "#e9e7e0",
+    wash: "#f7f7f4",
     teal: "#0f766e",
-    tealSoft: "#5eb5aa",
+    code: { key: "#3d5f9a", str: "#26251e", dim: "#a3a097", hi: "#9a4f2f" },
     good: "#15803d",
-    goodBg: "#eefaf2",
-    warn: "#a16207",
-    warnBg: "#fdf8e8",
+    goodBg: "#eef8f1",
+    warn: "#9a6510",
+    warnBg: "#fbf5e6",
     bad: "#b42318",
-    badBg: "#fdf1ef",
+    badBg: "#fbefed",
 };
 
-// The pale wash behind a hero or a tile, and its deeper accent.
-const TINT = { teal: "#ecf5f3", sand: "#f8f4ea", sage: "#f0f5ee", clay: "#fbf1eb", sky: "#eef3f8", stone: "#f4f3ef" };
-const DEEP = { teal: C.teal, sand: "#d8c7a0", sage: "#9fbf99", clay: "#dfa98f", sky: "#9fbad6", stone: "#d8d4ca" };
-
-const DISPLAY = "'EB Garamond','Iowan Old Style',Georgia,'Times New Roman',serif";
-const SANS = "Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif";
+const SANS = "Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'Helvetica Neue',Helvetica,Arial,sans-serif";
 const MONO = "'JetBrains Mono','SF Mono',SFMono-Regular,Menlo,Consolas,monospace";
 
 const table = (inner, style = "", attrs = "") =>
     `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"${attrs} style="border-collapse:separate;${style}">${inner}</table>`;
+const closing = `<tr><td colspan="9" style="border-top:1px solid ${C.hairline};font-size:0;line-height:0;">&nbsp;</td></tr>`;
 
 /* ── text ─────────────────────────────────────────────────────────── */
 
-const p = (html) => `<p style="margin:0 0 16px;font-family:${SANS};font-size:15px;line-height:1.65;color:${C.body};">${html}</p>`;
-const lead = (html) => `<p style="margin:0 0 18px;font-family:${SANS};font-size:16.5px;line-height:1.6;color:${C.inkStrong};">${html}</p>`;
+const p = (html) => `<p style="margin:0 0 16px;font-family:${SANS};font-size:15.5px;line-height:1.65;color:${C.body};">${html}</p>`;
+const lead = (html) => `<p style="margin:0 0 18px;font-family:${SANS};font-size:16px;line-height:1.6;color:${C.ink};">${html}</p>`;
 const b = (html) => `<strong style="color:${C.ink};font-weight:600;">${html}</strong>`;
-const a = (label, href) => `<a href="${href}" style="color:${C.ink};text-decoration:underline;text-decoration-color:${C.tealSoft};text-underline-offset:3px;">${label}</a>`;
-const code = (text) => `<code style="font-family:${MONO};font-size:13px;background:${C.hairlineSoft};border-radius:5px;padding:2px 6px;color:${C.inkStrong};">${text}</code>`;
-const h2 = (text) => `<p style="margin:26px 0 10px;font-family:${SANS};font-size:12px;line-height:1.4;font-weight:600;letter-spacing:0.08em;text-transform:uppercase;color:${C.muted};">${text}</p>`;
+const a = (label, href) => `<a href="${href}" style="color:${C.ink};text-decoration:underline;text-decoration-color:${C.soft};text-underline-offset:3px;">${label}</a>`;
+const code = (text) => `<code style="font-family:${MONO};font-size:13px;background:${C.wash};border:1px solid ${C.hairline};border-radius:5px;padding:1px 6px;color:${C.ink};">${text}</code>`;
+// A section label, the way the site labels its sections ("20-MINUTE SETUP").
+const h2 = (text) => `<p style="margin:28px 0 10px;font-family:${SANS};font-size:11.5px;line-height:1.4;font-weight:600;letter-spacing:0.12em;text-transform:uppercase;color:${C.muted};">${text}</p>`;
 const small = (html) => `<p style="margin:16px 0 0;font-family:${SANS};font-size:13px;line-height:1.6;color:${C.muted};">${html}</p>`;
 const rule = () => table(`<tr><td height="1" style="height:1px;line-height:1px;font-size:0;background:${C.hairline};">&nbsp;</td></tr>`, "margin:26px 0 24px;");
-
-// A visitor's words, set apart like a quote in the inbox.
-const quote = (html, who = "Visitor") =>
-    table(
-        `<tr><td width="3" style="width:3px;background:${C.teal};border-radius:3px;font-size:0;">&nbsp;</td><td style="padding:14px 18px;">` +
-            `<p style="margin:0 0 6px;font-family:${SANS};font-size:11.5px;font-weight:600;letter-spacing:0.08em;text-transform:uppercase;color:${C.muted};">${who}</p>` +
-            `<p style="margin:0;font-family:${DISPLAY};font-size:19px;line-height:1.45;color:${C.ink};">&ldquo;${html}&rdquo;</p></td></tr>`,
-        `margin:6px 0 20px;background:${TINT.teal};border-radius:12px;`,
-    );
+const mono = (text, color = C.muted) => `<span style="font-family:${MONO};font-size:12px;line-height:1.5;color:${color};">${text}</span>`;
+// The site's figure caption: "Fig. 02 · Paste, crawl, ready".
+const fig = (text) => `<p style="margin:-10px 2px 22px;text-align:right;font-family:${SANS};font-size:12.5px;line-height:1.5;color:${C.soft};">${text}</p>`;
 
 /* ── actions ──────────────────────────────────────────────────────── */
 
-const button = (label, href) =>
-    `<table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:10px 0 6px;"><tr>` +
-    `<td align="center" bgcolor="${C.inkStrong}" style="background:${C.inkStrong};border-radius:999px;padding:14px 28px;">` +
-    `<a href="${href}" style="display:inline-block;font-family:${SANS};font-size:15px;line-height:1;font-weight:600;color:#ffffff;text-decoration:none;white-space:nowrap;">${label}&nbsp;&nbsp;&rarr;</a>` +
+const dark = (label, href) =>
+    `<table role="presentation" cellpadding="0" cellspacing="0" border="0" style="display:inline-block;vertical-align:middle;margin:0 10px 10px 0;"><tr>` +
+    `<td align="center" bgcolor="${C.ink}" style="background:${C.ink};border-radius:8px;padding:13px 22px;">` +
+    `<a href="${href}" style="display:inline-block;font-family:${SANS};font-size:15px;line-height:1;font-weight:500;color:#ffffff;text-decoration:none;white-space:nowrap;">${label}</a>` +
+    `</td></tr></table>`;
+const outline = (label, href) =>
+    `<table role="presentation" cellpadding="0" cellspacing="0" border="0" style="display:inline-block;vertical-align:middle;margin:0 0 10px;"><tr>` +
+    `<td align="center" bgcolor="#ffffff" style="background:#ffffff;border:1px solid #dcd9d0;border-radius:8px;padding:12px 20px;">` +
+    `<a href="${href}" style="display:inline-block;font-family:${SANS};font-size:15px;line-height:1;font-weight:500;color:${C.ink};text-decoration:none;white-space:nowrap;">${label}</a>` +
     `</td></tr></table>`;
 
-// The pill and a quieter second action. Each is its own inline table, so on a
-// narrow screen the second wraps under the first instead of squeezing both.
-const buttons = (primary, secondary) =>
-    `<div style="margin:10px 0 6px;font-size:0;">` +
-    `<table role="presentation" cellpadding="0" cellspacing="0" border="0" style="display:inline-block;vertical-align:top;margin:0 10px 10px 0;"><tr>` +
-    `<td align="center" bgcolor="${C.inkStrong}" style="background:${C.inkStrong};border-radius:999px;padding:14px 26px;">` +
-    `<a href="${primary.href}" style="display:inline-block;font-family:${SANS};font-size:15px;line-height:1;font-weight:600;color:#ffffff;text-decoration:none;white-space:nowrap;">${primary.label}</a></td></tr></table>` +
-    `<table role="presentation" cellpadding="0" cellspacing="0" border="0" style="display:inline-block;vertical-align:top;margin:0 0 10px;"><tr>` +
-    `<td align="center" style="border:1px solid ${C.hairline};border-radius:999px;padding:13px 22px;">` +
-    `<a href="${secondary.href}" style="display:inline-block;font-family:${SANS};font-size:15px;line-height:1;font-weight:500;color:${C.inkStrong};text-decoration:none;white-space:nowrap;">${secondary.label}</a></td></tr></table>` +
-    `</div>`;
+const button = (label, href) => `<div style="margin:14px 0 4px;font-size:0;">${dark(label, href)}</div>`;
+const buttons = (primary, secondary) => `<div style="margin:14px 0 4px;font-size:0;">${dark(primary.label, primary.href)}${outline(secondary.label, secondary.href)}</div>`;
+// The site's quiet link: "Follow the quickstart →".
+const more = (label, href) => `<p style="margin:6px 0 4px;"><a href="${href}" style="font-family:${SANS};font-size:14.5px;font-weight:500;color:${C.ink};text-decoration:none;">${label}&nbsp;&rarr;</a></p>`;
 
 /* ── blocks ───────────────────────────────────────────────────────── */
 
+// The site's numbered timeline: a small circle with a mono number, a line between.
 const steps = (items) =>
     table(
         items
             .map(
                 (s, i) =>
-                    `<tr><td valign="top" width="40" style="width:40px;padding:0 0 18px;">` +
-                    `<table role="presentation" cellpadding="0" cellspacing="0" border="0"><tr><td align="center" valign="middle" width="28" height="28" style="width:28px;height:28px;border-radius:999px;background:${C.ink};font-family:${SANS};font-size:13px;font-weight:600;color:#ffffff;">${i + 1}</td></tr></table>` +
-                    `</td><td valign="top" style="padding:3px 0 18px;">` +
-                    `<p style="margin:0 0 3px;font-family:${SANS};font-size:15px;line-height:1.45;font-weight:600;color:${C.ink};">${s.title}</p>` +
-                    `<p style="margin:0;font-family:${SANS};font-size:14px;line-height:1.6;color:${C.muted};">${s.body}</p>` +
-                    `</td></tr>`,
+                    `<tr><td valign="top" width="40" style="width:40px;padding:0;">` +
+                    `<table role="presentation" cellpadding="0" cellspacing="0" border="0"><tr><td align="center" valign="middle" width="26" height="26" style="width:26px;height:26px;border-radius:999px;border:1px solid #d9d6cd;background:#ffffff;font-family:${MONO};font-size:11.5px;color:${C.muted};">${i + 1}</td></tr></table>` +
+                    (i < items.length - 1 ? `<table role="presentation" cellpadding="0" cellspacing="0" border="0"><tr><td width="13" style="width:13px;font-size:0;">&nbsp;</td><td width="1" height="34" style="width:1px;height:34px;background:${C.hairline};font-size:0;line-height:0;">&nbsp;</td></tr></table>` : "") +
+                    `</td><td valign="top" style="padding:3px 0 ${i < items.length - 1 ? "14px" : "4px"};">` +
+                    `<p style="margin:0 0 3px;font-family:${SANS};font-size:15.5px;line-height:1.4;font-weight:500;color:${C.ink};">${s.title}</p>` +
+                    `<p style="margin:0;font-family:${SANS};font-size:14.5px;line-height:1.6;color:${C.body};">${s.body}</p></td></tr>`,
             )
             .join(""),
-        "margin:6px 0 8px;",
+        "margin:6px 0 18px;",
     );
 
-const points = (items, tint = "teal") =>
+// The site's check-marked list.
+const points = (items) =>
     table(
         items
             .map(
                 (item) =>
-                    `<tr><td valign="top" width="22" style="width:22px;padding:8px 0 0;"><table role="presentation" cellpadding="0" cellspacing="0" border="0"><tr><td width="8" height="8" style="width:8px;height:8px;border-radius:999px;background:${DEEP[tint]};font-size:0;line-height:0;">&nbsp;</td></tr></table></td>` +
-                    `<td valign="top" style="padding:0 0 10px;font-family:${SANS};font-size:15px;line-height:1.6;color:${C.body};">${item}</td></tr>`,
+                    `<tr><td valign="top" width="24" style="width:24px;padding:1px 0 11px;font-family:${SANS};font-size:14px;line-height:1.6;color:${C.ink};">&#10003;</td>` +
+                    `<td valign="top" style="padding:0 0 11px;font-family:${SANS};font-size:15px;line-height:1.6;color:${C.body};">${item}</td></tr>`,
             )
             .join(""),
-        "margin:2px 0 14px;",
+        "margin:4px 0 14px;",
     );
 
 const checklist = (items) =>
@@ -131,121 +122,156 @@ const checklist = (items) =>
         items
             .map(
                 (item) =>
-                    `<tr><td valign="middle" width="34" style="width:34px;padding:7px 0;">` +
-                    `<table role="presentation" cellpadding="0" cellspacing="0" border="0"><tr><td align="center" valign="middle" width="22" height="22" style="width:22px;height:22px;border-radius:999px;${item.done ? `background:${C.teal};color:#ffffff;` : `border:1.5px solid ${C.hairline};color:${C.soft};`}font-family:${SANS};font-size:12px;font-weight:700;line-height:1;">${item.done ? "&#10003;" : "&nbsp;"}</td></tr></table>` +
-                    `</td><td valign="middle" style="padding:7px 0;font-family:${SANS};font-size:15px;line-height:1.45;color:${item.done ? C.muted : C.ink};${item.done ? `text-decoration:line-through;text-decoration-color:${C.soft};` : "font-weight:500;"}">${item.label}</td></tr>`,
+                    `<tr><td valign="middle" width="32" style="width:32px;padding:11px 0;border-top:1px solid ${C.hairline};">` +
+                    `<table role="presentation" cellpadding="0" cellspacing="0" border="0"><tr><td align="center" valign="middle" width="20" height="20" style="width:20px;height:20px;border-radius:999px;${item.done ? `background:${C.ink};color:#ffffff;` : `border:1.5px solid #d9d6cd;color:#ffffff;`}font-family:${SANS};font-size:11px;font-weight:700;line-height:1;">${item.done ? "&#10003;" : "&nbsp;"}</td></tr></table>` +
+                    `</td><td valign="middle" style="padding:11px 0;border-top:1px solid ${C.hairline};font-family:${SANS};font-size:15px;line-height:1.45;color:${item.done ? C.soft : C.ink};${item.done ? "text-decoration:line-through;" : ""}">${item.label}</td></tr>`,
             )
-            .join(""),
-        `margin:6px 0 18px;padding:10px 18px;background:${TINT.stone};border-radius:14px;`,
+            .join("") + closing,
+        "margin:4px 0 18px;",
     );
 
-// Side-by-side figures. Values are placeholders the backend fills, already formatted.
-const stats = (items, tint = "stone") => {
+// The site's flow of chips: "SITEMAP.XML → 214 PAGES CRAWLED → ✓ READY".
+const flow = (labels) =>
+    `<div style="margin:2px 0 20px;font-size:0;line-height:30px;">${labels
+        .map(
+            (l, i) =>
+                (i ? `<span style="display:inline-block;margin:0 8px;font-family:${SANS};font-size:13px;color:${C.soft};vertical-align:middle;">&rarr;</span>` : "") +
+                `<span style="display:inline-block;padding:6px 11px;border-radius:999px;background:#eceae4;font-family:${SANS};font-size:11px;line-height:1;font-weight:600;letter-spacing:0.06em;text-transform:uppercase;color:${C.ink};vertical-align:middle;white-space:nowrap;">${l}</span>`,
+        )
+        .join("")}</div>`;
+
+// Big numbers between hairlines. Values arrive formatted.
+const stats = (items) => {
     const width = Math.floor(100 / items.length);
     return table(
         `<tr>${items
             .map(
                 (s, i) =>
-                    `${i ? `<td width="8" style="width:8px;font-size:0;">&nbsp;</td>` : ""}<td valign="top" align="left" width="${width}%" style="width:${width}%;padding:16px 16px 14px;background:${TINT[tint]};border-radius:14px;">` +
-                    `<p style="margin:0;font-family:${DISPLAY};font-size:28px;line-height:1.1;color:${C.ink};letter-spacing:-0.01em;">${s.value}</p>` +
-                    `<p style="margin:6px 0 0;font-family:${SANS};font-size:12px;line-height:1.35;color:${C.muted};">${s.label}</p></td>`,
+                    `<td valign="top" width="${width}%" style="width:${width}%;padding:18px ${i < items.length - 1 ? "16px" : "0"} 18px ${i ? "16px" : "0"};${i ? `border-left:1px solid ${C.hairline};` : ""}">` +
+                    `<p style="margin:0;font-family:${SANS};font-size:34px;line-height:1.05;font-weight:400;color:${C.ink};letter-spacing:-0.035em;">${s.value}</p>` +
+                    `<p style="margin:7px 0 0;font-family:${SANS};font-size:13px;line-height:1.4;color:${C.muted};">${s.label}</p></td>`,
             )
             .join("")}</tr>`,
-        "margin:4px 0 20px;",
+        `margin:6px 0 22px;border-top:1px solid ${C.hairline};border-bottom:1px solid ${C.hairline};`,
     );
 };
 
+// Label → value rows, like the site's tables: a plan, a receipt, a record.
 const details = (rows) =>
     table(
         rows
             .map(
                 ([k, v], i) =>
-                    `<tr><td valign="top" style="padding:11px 0;${i ? `border-top:1px solid ${C.hairlineSoft};` : ""}font-family:${SANS};font-size:13.5px;color:${C.muted};width:40%;">${k}</td>` +
-                    `<td valign="top" align="right" style="padding:11px 0;${i ? `border-top:1px solid ${C.hairlineSoft};` : ""}font-family:${SANS};font-size:14px;font-weight:500;color:${C.ink};">${v}</td></tr>`,
+                    `<tr><td valign="top" style="padding:12px 18px;${i ? `border-top:1px solid ${C.hairline};` : ""}font-family:${MONO};font-size:11.5px;letter-spacing:0.04em;text-transform:uppercase;color:${C.muted};width:42%;">${k}</td>` +
+                    `<td valign="top" align="right" style="padding:12px 18px;${i ? `border-top:1px solid ${C.hairline};` : ""}font-family:${SANS};font-size:14px;font-weight:500;color:${C.ink};">${v}</td></tr>`,
             )
             .join(""),
-        `margin:4px 0 20px;padding:4px 18px;border:1px solid ${C.hairline};border-radius:14px;`,
+        `margin:4px 0 22px;background:#ffffff;border:1px solid ${C.hairline};border-radius:14px;`,
     );
 
-// A dark code card: the install snippet, an MCP command. Lines are pre-escaped HTML.
+// A light code card with window dots and a file name, like the site's snippets.
 const codeBlock = (label, lines) =>
     table(
-        `<tr><td style="padding:12px 18px 0;font-family:${MONO};font-size:11px;letter-spacing:0.06em;text-transform:uppercase;color:${C.codeDim};">${label}</td></tr>` +
-            `<tr><td style="padding:10px 18px 16px;font-family:${MONO};font-size:13px;line-height:1.7;color:${C.codeText};white-space:pre-wrap;word-break:normal;overflow-wrap:anywhere;">${lines.join("<br>")}</td></tr>`,
-        `margin:6px 0 20px;background:${C.code};border-radius:14px;`,
+        `<tr><td style="padding:12px 18px;border-bottom:1px solid ${C.hairline};">` +
+            `<span style="display:inline-block;width:8px;height:8px;border-radius:999px;background:#d9d6cd;margin-right:5px;"></span><span style="display:inline-block;width:8px;height:8px;border-radius:999px;background:#d9d6cd;margin-right:5px;"></span><span style="display:inline-block;width:8px;height:8px;border-radius:999px;background:#d9d6cd;margin-right:12px;"></span>` +
+            `${mono(label)}</td></tr>` +
+            `<tr><td style="padding:16px 18px 18px;font-family:${MONO};font-size:13px;line-height:1.75;color:${C.ink};white-space:pre-wrap;word-break:normal;overflow-wrap:anywhere;">${lines.join("<br>")}</td></tr>`,
+        `margin:6px 0 22px;background:#ffffff;border:1px solid ${C.hairline};border-radius:14px;`,
     );
 
 const tok = {
-    key: (s) => `<span style="color:#9fbad6;">${s}</span>`,
-    str: (s) => `<span style="color:#8fd1c6;">${s}</span>`,
-    dim: (s) => `<span style="color:${C.codeDim};">${s}</span>`,
-    hi: (s) => `<span style="color:#dfa98f;">${s}</span>`,
+    key: (s) => `<span style="color:${C.code.key};">${s}</span>`,
+    str: (s) => `<span style="color:${C.code.str};">${s}</span>`,
+    dim: (s) => `<span style="color:${C.code.dim};">${s}</span>`,
+    hi: (s) => `<span style="color:${C.code.hi};">${s}</span>`,
 };
 
 const callout = (tone, title, body) => {
-    const [bg, fg, bar] =
-        tone === "good" ? [C.goodBg, C.good, C.good] : tone === "warn" ? [C.warnBg, C.warn, "#e0b23a"] : tone === "bad" ? [C.badBg, C.bad, C.bad] : [TINT.teal, C.inkStrong, C.teal];
+    const [bg, fg, border] =
+        tone === "good" ? [C.goodBg, C.good, C.goodBg] : tone === "warn" ? [C.warnBg, C.warn, C.warnBg] : tone === "bad" ? [C.badBg, C.bad, C.badBg] : ["#ffffff", C.ink, C.hairline];
     return table(
-        `<tr><td width="3" style="width:3px;background:${bar};border-radius:3px;font-size:0;">&nbsp;</td><td style="padding:14px 18px;">` +
-            `<p style="margin:0 0 4px;font-family:${SANS};font-size:14px;line-height:1.45;font-weight:600;color:${fg};">${title}</p>` +
+        `<tr><td style="padding:16px 18px;">` +
+            `<p style="margin:0 0 4px;font-family:${SANS};font-size:14.5px;line-height:1.45;font-weight:600;color:${fg};">${title}</p>` +
             `<p style="margin:0;font-family:${SANS};font-size:14px;line-height:1.6;color:${C.body};">${body}</p></td></tr>`,
-        `margin:6px 0 20px;background:${bg};border-radius:12px;`,
+        `margin:6px 0 20px;background:${bg};border:1px solid ${border};border-radius:14px;`,
     );
 };
 
+// Cards two by two, like the site's feature grid, each with a mono index.
 const tiles = (items) => {
-    const cell = (t) =>
-        `<td valign="top" class="tile" width="50%" style="width:50%;padding:16px 16px 14px;background:${TINT[t.tint]};border-radius:14px;">` +
-        `<table role="presentation" cellpadding="0" cellspacing="0" border="0"><tr><td width="22" height="4" style="width:22px;height:4px;border-radius:4px;background:${DEEP[t.tint]};font-size:0;line-height:0;">&nbsp;</td></tr></table>` +
-        `<p style="margin:12px 0 4px;font-family:${SANS};font-size:15px;line-height:1.4;font-weight:600;color:${C.ink};">${t.href ? `<a href="${t.href}" style="color:${C.ink};text-decoration:none;">${t.title}&nbsp;&rarr;</a>` : t.title}</p>` +
-        `<p style="margin:0;font-family:${SANS};font-size:13.5px;line-height:1.55;color:${C.muted};">${t.body}</p></td>`;
+    const cell = (t, n) =>
+        `<td valign="top" class="tile" width="50%" style="width:50%;padding:16px 16px 18px;background:#ffffff;border:1px solid ${C.hairline};border-radius:14px;">` +
+        `<p style="margin:0 0 10px;">${mono(String(n).padStart(2, "0"), C.soft)}</p>` +
+        `<p style="margin:0 0 4px;font-family:${SANS};font-size:15px;line-height:1.4;font-weight:500;color:${C.ink};">${t.href ? `<a href="${t.href}" style="color:${C.ink};text-decoration:none;">${t.title}&nbsp;&rarr;</a>` : t.title}</p>` +
+        `<p style="margin:0;font-family:${SANS};font-size:13.5px;line-height:1.55;color:${C.body};">${t.body}</p></td>`;
     const rows = [];
     for (let i = 0; i < items.length; i += 2) {
-        const pair = items.slice(i, i + 2);
         rows.push(
-            `<tr>${cell(pair[0])}<td width="10" class="tile-gap" style="width:10px;font-size:0;">&nbsp;</td>${pair[1] ? cell(pair[1]) : `<td width="50%" style="width:50%;">&nbsp;</td>`}</tr>` +
+            `<tr>${cell(items[i], i + 1)}<td width="10" class="tile-gap" style="width:10px;font-size:0;">&nbsp;</td>${items[i + 1] ? cell(items[i + 1], i + 2) : `<td width="50%" style="width:50%;">&nbsp;</td>`}</tr>` +
                 (i + 2 < items.length ? `<tr><td colspan="3" height="10" style="height:10px;font-size:0;line-height:0;">&nbsp;</td></tr>` : ""),
         );
     }
     return table(rows.join(""), "margin:6px 0 20px;");
 };
 
-// A miniature of a chat turn: what was asked and how the agent answered.
+// A turn as the widget shows it: the visitor's dark bubble, Zea's light reply.
 const chat = (question, answer, agent = "Zea") =>
     table(
-        `<tr><td style="padding:16px 16px 6px;" align="right"><span style="display:inline-block;max-width:80%;padding:10px 14px;border-radius:16px 16px 4px 16px;background:${C.ink};font-family:${SANS};font-size:14px;line-height:1.5;color:#ffffff;text-align:left;">${question}</span></td></tr>` +
-            `<tr><td style="padding:6px 16px 16px;"><p style="margin:0 0 4px;font-family:${SANS};font-size:11.5px;font-weight:600;color:${C.teal};">${agent}</p><span style="display:inline-block;max-width:85%;padding:10px 14px;border-radius:16px 16px 16px 4px;background:${C.hairlineSoft};font-family:${SANS};font-size:14px;line-height:1.5;color:${C.inkStrong};">${answer}</span></td></tr>`,
-        `margin:6px 0 20px;background:#ffffff;border:1px solid ${C.hairline};border-radius:16px;`,
+        `<tr><td style="padding:18px 18px 8px;" align="right"><span style="display:inline-block;max-width:82%;padding:11px 15px;border-radius:16px;background:${C.ink};font-family:${SANS};font-size:14px;line-height:1.5;color:#ffffff;text-align:left;">${question}</span></td></tr>` +
+            `<tr><td style="padding:6px 18px 18px;"><p style="margin:0 0 6px;">${mono(agent, C.muted)}</p><span style="display:inline-block;max-width:86%;padding:11px 15px;border-radius:16px;background:${C.wash};border:1px solid ${C.hairline};font-family:${SANS};font-size:14px;line-height:1.5;color:${C.ink};">${answer}</span></td></tr>` +
+            `<tr><td style="padding:12px 18px;border-top:1px solid ${C.hairline};font-family:${MONO};font-size:11px;letter-spacing:0.06em;color:${C.muted};">GATE &mdash; RETRIEVE &mdash; RERANK &mdash; GENERATE &mdash; VALIDATE &nbsp;&middot;&nbsp; grounded</td></tr>`,
+        `margin:6px 0 22px;background:#ffffff;border:1px solid ${C.hairline};border-radius:16px;`,
     );
 
+// A visitor's own words, set as the widget shows them.
+const quote = (html, who = "Visitor") =>
+    table(
+        `<tr><td style="padding:16px 18px 8px;"><p style="margin:0;">${mono(who, C.muted)}</p></td></tr>` +
+            `<tr><td style="padding:0 18px 18px;"><span style="display:inline-block;padding:11px 15px;border-radius:16px;background:${C.ink};font-family:${SANS};font-size:14.5px;line-height:1.5;color:#ffffff;">${html}</span></td></tr>`,
+        `margin:6px 0 22px;background:#ffffff;border:1px solid ${C.hairline};border-radius:16px;`,
+    );
+
+// A score bar, like the site's rerank threshold.
 const meter = (caption, percentWidth, tone = "ink") => {
-    const fill = tone === "bad" ? C.bad : tone === "warn" ? "#e0b23a" : C.teal;
+    const fill = tone === "bad" ? C.bad : tone === "warn" ? "#c08a2a" : C.ink;
     return (
-        `<p style="margin:0 0 8px;font-family:${SANS};font-size:13.5px;color:${C.muted};">${caption}</p>` +
+        `<p style="margin:0 0 10px;font-family:${MONO};font-size:11.5px;letter-spacing:0.05em;text-transform:uppercase;color:${C.muted};">${caption}</p>` +
         table(
-            `<tr><td style="background:${C.hairlineSoft};border-radius:999px;height:10px;line-height:10px;font-size:0;">` +
-                `<table role="presentation" cellpadding="0" cellspacing="0" border="0" width="${percentWidth}" style="width:${percentWidth};"><tr><td height="10" style="height:10px;background:${fill};border-radius:999px;font-size:0;line-height:0;">&nbsp;</td></tr></table></td></tr>`,
-            "margin:0 0 20px;",
+            `<tr><td style="background:#eceae4;border-radius:999px;height:6px;line-height:6px;font-size:0;">` +
+                `<table role="presentation" cellpadding="0" cellspacing="0" border="0" width="${percentWidth}" style="width:${percentWidth};"><tr><td height="6" style="height:6px;background:${fill};border-radius:999px;font-size:0;line-height:0;">&nbsp;</td></tr></table></td></tr>`,
+            "margin:0 0 22px;",
         )
     );
 };
 
+// Zea, as on the site's hero, with a figure caption. The poster has thin dark
+// bands top and bottom that the site crops; the frame trims them the same way
+// (clients that ignore overflow show the full poster).
+const zea = (caption = "Fig. 00 · Zea, answering on your site") =>
+    `<div style="width:240px;max-width:100%;height:294px;overflow:hidden;border-radius:18px;background:#efe9e3;">` +
+    `<img src="${ZEA.src}" width="240" alt="${ZEA.alt}" style="display:block;width:240px;max-width:100%;height:auto;border:0;margin-top:-3px;" /></div>` +
+    `<p style="margin:10px 2px 22px;font-family:${SANS};font-size:12.5px;line-height:1.5;color:${C.soft};">${caption}</p>`;
+
 const signature = (name = "Pankaj", role = "Founder, Zealoop") =>
     table(
-        `<tr><td width="48" valign="middle" style="width:48px;"><table role="presentation" cellpadding="0" cellspacing="0" border="0"><tr><td align="center" valign="middle" width="38" height="38" style="width:38px;height:38px;border-radius:999px;background:${TINT.teal};border:1px solid ${C.tealSoft};font-family:${DISPLAY};font-size:18px;color:${C.teal};">${name[0]}</td></tr></table></td>` +
-            `<td valign="middle"><p style="margin:0;font-family:${SANS};font-size:14.5px;font-weight:600;color:${C.ink};">${name}</p><p style="margin:2px 0 0;font-family:${SANS};font-size:13px;color:${C.muted};">${role}</p></td></tr>`,
-        "margin:24px 0 0;",
+        `<tr><td width="46" valign="middle" style="width:46px;"><table role="presentation" cellpadding="0" cellspacing="0" border="0"><tr><td align="center" valign="middle" width="36" height="36" style="width:36px;height:36px;border-radius:999px;background:${C.ink};font-family:${SANS};font-size:15px;font-weight:500;color:#ffffff;">${name[0]}</td></tr></table></td>` +
+            `<td valign="middle"><p style="margin:0;font-family:${SANS};font-size:14.5px;font-weight:500;color:${C.ink};">${name}</p><p style="margin:2px 0 0;font-family:${SANS};font-size:13px;color:${C.muted};">${role}</p></td></tr>`,
+        `margin:26px 0 0;padding-top:20px;border-top:1px solid ${C.hairline};`,
     );
 
 /* ── the frame ────────────────────────────────────────────────────── */
 
+// The wordmark: "Zealoop" with the logo's teal dot.
 const mark = () =>
-    `<table role="presentation" cellpadding="0" cellspacing="0" border="0"><tr>` +
-    `<td valign="middle" style="font-family:${DISPLAY};font-size:25px;line-height:1;color:${C.ink};letter-spacing:-0.01em;">zealoop</td>` +
-    `<td valign="middle" style="padding-left:4px;padding-top:4px;"><table role="presentation" cellpadding="0" cellspacing="0" border="0"><tr><td width="7" height="7" style="width:7px;height:7px;border-radius:999px;background:${C.teal};font-size:0;line-height:0;">&nbsp;</td></tr></table></td>` +
-    `</tr></table>`;
+    `<span style="font-family:${SANS};font-size:17px;line-height:1;font-weight:600;color:${C.ink};letter-spacing:-0.02em;">Zealoop</span>` +
+    `<span style="display:inline-block;width:6px;height:6px;margin-left:3px;border-radius:999px;background:${C.teal};vertical-align:baseline;"></span>`;
 
-// email: { preheader, eyebrow, heading, tint, body: string[], reason }
+// The eyebrow in a white pill with a dot, like "• Built for small SaaS support teams".
+const eyebrowPill = (text) =>
+    `<span style="display:inline-block;padding:6px 12px 6px 10px;border-radius:999px;background:#ffffff;border:1px solid rgba(38,37,30,0.06);font-family:${SANS};font-size:12.5px;line-height:1;font-weight:500;color:${C.ink};white-space:nowrap;">` +
+    `<span style="display:inline-block;width:5px;height:5px;margin-right:7px;border-radius:999px;background:${C.ink};vertical-align:middle;"></span>${text}</span>`;
+
+// email: { preheader, eyebrow, heading, body: string[], reason }
 function renderEmail(email) {
     const address = COMPANY_ADDRESS.trim();
     return `<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
@@ -256,12 +282,13 @@ function renderEmail(email) {
 <meta name="color-scheme" content="light" />
 <meta name="supported-color-schemes" content="light" />
 <title>${email.heading}</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&amp;family=JetBrains+Mono:wght@400&amp;display=swap" rel="stylesheet" />
 <style>
   @media (max-width: 600px) {
-    .wrap { padding: 20px 12px !important; }
-    .pad { padding: 28px 22px 26px !important; }
-    .hero { padding: 26px 22px 22px !important; }
-    .h1 { font-size: 29px !important; }
+    .wrap { padding: 16px 10px !important; }
+    .pad { padding: 26px 22px 28px !important; }
+    .hero { padding: 26px 22px 28px !important; }
+    .h1 { font-size: 32px !important; }
     .tile { display: block !important; width: auto !important; margin-bottom: 10px !important; }
     .tile-gap { display: none !important; }
   }
@@ -270,20 +297,19 @@ function renderEmail(email) {
 <body style="margin:0;padding:0;background:${C.canvas};-webkit-font-smoothing:antialiased;-webkit-text-size-adjust:100%;">
 <div style="display:none;font-size:1px;color:${C.canvas};line-height:1px;max-height:0;max-width:0;opacity:0;overflow:hidden;">${email.preheader}${"&nbsp;&#847;&zwnj;".repeat(40)}</div>
 ${table(
-    `<tr><td align="center" class="wrap" style="padding:40px 20px 48px;">
+    `<tr><td align="center" class="wrap" style="padding:36px 20px 48px;">
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="max-width:580px;">
-<tr><td style="padding:0 6px 22px;">${mark()}</td></tr>
-<tr><td style="background:${C.card};border:1px solid ${C.hairline};border-radius:22px;overflow:hidden;">
-${table(`<tr><td height="3" style="height:3px;line-height:3px;font-size:0;background:${C.teal};">&nbsp;</td></tr>`)}
+<tr><td style="background:${C.card};border:1px solid ${C.hairline};border-radius:22px;">
 ${table(
-    `<tr><td class="hero" style="padding:34px 40px 26px;background:${TINT[email.tint]};">` +
-        `<p style="margin:0 0 12px;font-family:${SANS};font-size:11.5px;line-height:1.4;font-weight:600;letter-spacing:0.09em;text-transform:uppercase;color:${C.teal};">${email.eyebrow}</p>` +
-        `<h1 class="h1" style="margin:0;font-family:${DISPLAY};font-size:35px;line-height:1.1;font-weight:400;color:${C.ink};letter-spacing:-0.015em;">${email.heading}</h1>` +
+    `<tr><td class="hero" bgcolor="#f4efe9" style="padding:30px 40px 34px;background:#f4efe9;background-image:linear-gradient(115deg,#f2ddd2 0%,#f5f1ec 48%,#e1e8f1 100%);border-radius:22px 22px 0 0;">` +
+        `<p style="margin:0 0 34px;">${mark()}</p>` +
+        `<p style="margin:0 0 18px;">${eyebrowPill(email.eyebrow)}</p>` +
+        `<h1 class="h1" style="margin:0;font-family:${SANS};font-size:38px;line-height:1.08;font-weight:400;color:${C.ink};letter-spacing:-0.035em;">${email.heading}</h1>` +
         `</td></tr>` +
-        `<tr><td class="pad" style="padding:30px 40px 34px;">${email.body.join("\n")}</td></tr>`,
+        `<tr><td class="pad" style="padding:32px 40px 36px;">${email.body.join("\n")}</td></tr>`,
 )}
 </td></tr>
-<tr><td style="padding:22px 8px 0;">
+<tr><td style="padding:22px 10px 0;">
 <p style="margin:0 0 8px;font-family:${SANS};font-size:12.5px;line-height:1.6;color:${C.muted};">${email.reason}</p>
 <p style="margin:0;font-family:${SANS};font-size:12.5px;line-height:1.6;color:${C.soft};">
 <a href="${APP}" style="color:${C.muted};text-decoration:none;">Dashboard</a>&nbsp;&nbsp;·&nbsp;&nbsp;<a href="${SITE}" style="color:${C.muted};text-decoration:none;">zealoop.com</a>&nbsp;&nbsp;·&nbsp;&nbsp;<a href="mailto:${SUPPORT}" style="color:${C.muted};text-decoration:none;">${SUPPORT}</a>${address ? `<br>${address}` : ""}
@@ -298,7 +324,7 @@ ${table(
 }
 
 module.exports = {
-    APP, SITE, SUPPORT, COMPANY_ADDRESS, C, TINT,
-    p, lead, b, a, code, h2, small, rule, quote, button, buttons, steps, points, checklist, stats, details, codeBlock, tok, callout, tiles, chat, meter, signature,
+    APP, SITE, SUPPORT, COMPANY_ADDRESS, C, ZEA,
+    p, lead, b, a, code, h2, small, rule, mono, fig, quote, button, buttons, more, steps, points, checklist, flow, stats, details, codeBlock, tok, callout, tiles, chat, meter, zea, signature,
     renderEmail,
 };

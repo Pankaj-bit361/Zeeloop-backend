@@ -10,7 +10,7 @@ const RESULTS = [
     t("conversations-milestone", "Conversations milestone", "marketing", "milestone.conversations", "{{count_label}} — your agent's latest milestone", {
         preheader: "Every one answered from your content, any hour of the day.",
         eyebrow: "Milestone",
-        heading: "{{count_label}} and counting",
+        heading: "{{count_label}} and counting.",
         tint: "teal",
         body: [
             lead(hi),
@@ -24,7 +24,7 @@ const RESULTS = [
     t("weekly-digest", "Weekly digest", "marketing", "digest.weekly", "Your agent's week: {{conversations_label}}, {{resolved_pct}} resolved", {
         preheader: "{{week_label}} · {{conversations_label}}. {{handoffs_note}}",
         eyebrow: "Weekly · {{week_label}}",
-        heading: "Your agent's week",
+        heading: "Your agent's week.",
         tint: "sky",
         body: [
             lead(hi),
@@ -43,7 +43,7 @@ const RESULTS = [
     t("monthly-report", "Monthly report", "marketing", "report.monthly", "{{month}} on Zealoop: {{conversations_label}}, {{hours_label}} saved", {
         preheader: "{{resolved_pct}} resolved without a person. Here's the month at a glance.",
         eyebrow: "Monthly report · {{month}}",
-        heading: "{{month}} at a glance",
+        heading: "{{month}} at a glance.",
         tint: "teal",
         body: [
             lead(hi),
@@ -65,7 +65,7 @@ const RESULTS = [
     t("anniversary", "Anniversary", "marketing", "account.anniversary", "{{years_label}} with Zealoop — thank you", {
         preheader: "{{conversations_label}} answered so far.",
         eyebrow: "Anniversary",
-        heading: "{{years_label}} together",
+        heading: "{{years_label}} together.",
         tint: "sand",
         body: [
             lead(hi),
@@ -97,7 +97,7 @@ const RESULTS = [
     t("inactive-14d", "Away for two weeks", "marketing", "user.inactive_14d", "Your agent handled {{conversations_label}} while you were away", {
         preheader: "Nobody's opened the dashboard in two weeks. Here's what you missed.",
         eyebrow: "While you were away",
-        heading: "Your agent kept working",
+        heading: "Your agent kept working.",
         tint: "sky",
         body: [
             lead(hi),
@@ -125,7 +125,7 @@ const RESULTS = [
     t("inactive-60d", "Away for two months", "marketing", "user.inactive_60d", "We'll stop checking in", {
         preheader: "One last note. Your workspace stays exactly as it is.",
         eyebrow: "Last check-in",
-        heading: "We'll leave you to it",
+        heading: "We'll leave you to it.",
         tint: "stone",
         body: [
             lead(hi),

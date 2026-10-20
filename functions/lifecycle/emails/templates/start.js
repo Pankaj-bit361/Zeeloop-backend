@@ -1,6 +1,6 @@
 "use strict";
 // Getting started: from sign-up to an agent that answers real visitors, one step at a time.
-const { APP, b, button, buttons, chat, checklist, code, codeBlock, h2, lead, p, points, quote, signature, small, steps, tiles, tok } = require("../layout");
+const { APP, SITE, b, button, buttons, chat, checklist, code, codeBlock, fig, flow, h2, lead, more, p, points, quote, signature, small, steps, tiles, tok, zea } = require("../layout");
 const { hi, t } = require("./types");
 
 const REASON = "You're getting this because you signed up for Zealoop. It's one of a few short emails to help you get your agent live.";
@@ -20,12 +20,14 @@ const START = [
         body: [
             lead(hi),
             p("Thanks for trying Zealoop. You're a few steps from an AI agent that answers your customers from your own docs, looks things up in your systems, and hands over to a person the moment it should."),
+            zea(),
             steps([
                 { title: "Point it at your content", body: "Your website, help centre, PDFs or a few paragraphs. Zealoop reads it and answers only from what it finds." },
                 { title: "Tell it how to behave", body: "Tone, what it must never promise, and when to bring in a human — in plain sentences." },
                 { title: "Add one script tag", body: "Paste it into your site. Zealoop confirms the moment it sees the widget." },
             ]),
             button("Set up your workspace", `${APP}/setup`),
+            more("Follow the 20-minute quickstart", `${SITE}/docs/quickstart`),
             small("Reply to this email any time. It reaches the team, and a real person answers."),
         ],
         reason: REASON,
@@ -34,7 +36,7 @@ const START = [
     t("workspace-nudge", "Finish setting up", "marketing", "user.signed_up", "Your Zealoop workspace is one step away", {
         preheader: "Name your workspace and Zealoop starts reading your site straight away.",
         eyebrow: "Getting started",
-        heading: "One step to your first workspace",
+        heading: "One step to your first workspace.",
         tint: "sand",
         body: [
             lead(hi),
@@ -54,7 +56,7 @@ const START = [
     t("workspace-created", "Workspace ready", "marketing", "workspace.created", "{{workspace}} is ready — your trial has started", {
         preheader: "{{trial_days}} days of the Growth plan, everything unlocked. Here's what to do first.",
         eyebrow: "New workspace",
-        heading: "{{workspace}} is ready",
+        heading: "{{workspace}} is ready.",
         tint: "teal",
         body: [
             lead(hi),
@@ -73,7 +75,7 @@ const START = [
     t("knowledge-nudge", "Add your content", "marketing", "workspace.created", "Your agent can't answer what it hasn't read", {
         preheader: "Point Zealoop at your site or docs. It reads, chunks and indexes everything for you.",
         eyebrow: "Getting started · Step 1",
-        heading: "Give your agent something to read",
+        heading: "Give your agent something to read.",
         tint: "sand",
         body: [
             lead(hi),
@@ -92,12 +94,14 @@ const START = [
     t("knowledge-ready", "Content indexed", "marketing", "knowledge.first_ready", "{{source_name}} is indexed — your agent can answer from it", {
         preheader: "{{chunks_label}} ready. Ask it something your customers ask you.",
         eyebrow: "Getting started · Step 1 done",
-        heading: "Your agent has read {{source_name}}",
+        heading: "Your agent has read {{source_name}}.",
         tint: "teal",
         body: [
             lead(hi),
             p(`${b("{{source_name}}")} is indexed: {{chunks_label}} your agent can now cite. Try it before your customers do — open the preview and ask the question you answer most often.`),
-            chat("Do you ship to Canada, and how long does it take?", "Yes — we ship to Canada in 5–7 business days. Orders over $50 ship free. <span style=\"color:#7b776f;\">Source: Shipping policy</span>"),
+            flow(["{{source_name}}", "{{chunks_label}}", "&#10003; Ready"]),
+            chat("Do you ship to Canada, and how long does it take?", "Yes — we ship to Canada in 5–7 business days. Orders over $50 ship free. <span style=\"color:#8a877e;\">Source: Shipping policy</span>"),
+            fig("Fig. 01 · Answers with receipts"),
             buttons({ label: "Try your agent", href: `${APP}/agent` }, { label: "Add more content", href: `${APP}/knowledge` }),
             small("Every answer shows the passages it came from, so you can see exactly why it said what it said."),
         ],
@@ -112,9 +116,11 @@ const START = [
         body: [
             lead(hi),
             p(`${b("{{workspace}}")} has content and an agent that can answer from it, but the widget isn't on your site yet. Paste this before ${code("&lt;/body&gt;")} — your own key is on the Setup page:`),
-            codeBlock("HTML", SNIPPET),
+            codeBlock("index.html", SNIPPET),
+            fig("Fig. 02 · Paste, crawl, ready"),
             p(`Using React, Vue, WordPress, Shopify or Google Tag Manager? The Setup page has a version for each, and it lights up green as soon as the widget loads.`),
             button("Get your snippet", `${APP}/setup`),
+            more("Follow the quickstart", `${SITE}/docs/quickstart`),
         ],
         reason: REASON,
     }),
@@ -122,11 +128,12 @@ const START = [
     t("widget-installed", "Widget live", "marketing", "widget.installed", "Zealoop is live on {{site}}", {
         preheader: "Your agent is answering visitors now. Here's how to watch it work.",
         eyebrow: "You're live",
-        heading: "Your agent is live on {{site}}",
+        heading: "Your agent is live on {{site}}.",
         tint: "teal",
         body: [
             lead(hi),
             p(`We just saw the widget load on ${b("{{site}}")}. From now on every visitor can ask a question and get an answer from your content, any hour of the day.`),
+            zea("Fig. 00 · Zea, now answering on {{site}}"),
             h2("Three things worth doing this week"),
             points([
                 `${b("Watch the inbox.")} Every conversation lands there, and anything the agent hands over is marked for you.`,
@@ -159,7 +166,7 @@ const START = [
     t("first-conversation", "First conversation", "marketing", "conversation.first", "Your agent just had its first conversation", {
         preheader: "A visitor asked, your agent answered. Read the whole thread.",
         eyebrow: "First conversation",
-        heading: "Your first visitor said hello",
+        heading: "Your first visitor said hello.",
         tint: "teal",
         body: [
             lead(hi),
@@ -174,7 +181,7 @@ const START = [
     t("first-escalation", "First handoff", "marketing", "escalation.first", "Your agent handed its first conversation to you", {
         preheader: "A visitor needed a person. Here's how handoffs work — and how to answer.",
         eyebrow: "First handoff",
-        heading: "A visitor needs a person",
+        heading: "A visitor needs a person.",
         tint: "clay",
         body: [
             lead(hi),
@@ -193,7 +200,7 @@ const START = [
     t("guidance-nudge", "Shape your agent", "marketing", "account.day_3", "Teach your agent the rules in plain English", {
         preheader: "What to always say, what never to promise, and when to bring in a human.",
         eyebrow: "Getting started · Tip",
-        heading: "Your agent follows rules you write in plain English",
+        heading: "Your agent follows rules you write in plain English.",
         tint: "sky",
         body: [
             lead(hi),
@@ -226,7 +233,7 @@ const START = [
     t("trial-halfway", "Trial halfway", "marketing", "account.day_7", "Halfway through your trial: the parts most people miss", {
         preheader: "Actions, tables and procedures are where the agent stops answering questions and starts solving them.",
         eyebrow: "Trial · Day 7 of 14",
-        heading: "From answering questions to solving them",
+        heading: "From answering questions to solving them.",
         tint: "sand",
         body: [
             lead(hi),
@@ -246,12 +253,13 @@ const START = [
     t("actions-nudge", "Connect an action", "marketing", "account.day_7", "Let your agent look things up, not just read", {
         preheader: "One API endpoint turns \"where is my order?\" from a handoff into an answer.",
         eyebrow: "Tip",
-        heading: "“Where is my order?” shouldn't need a person",
+        heading: "“Where is my order?” shouldn't need a person.",
         tint: "clay",
         body: [
             lead(hi),
             p("The questions your docs can't answer are about the visitor themselves: their order, their plan, their booking. An action lets the agent call your API and answer with their real data."),
-            chat("Where's my order #4821?", "It shipped yesterday with UPS and arrives Thursday. Here's the tracking link. <span style=\"color:#7b776f;\">Action: Order lookup</span>"),
+            chat("Where's my order #4821?", "It shipped yesterday with UPS and arrives Thursday. Here's the tracking link. <span style=\"color:#8a877e;\">Action: Order lookup</span>"),
+            fig("Fig. 03 · Your API, behind four checks"),
             steps([
                 { title: "Describe the endpoint", body: "URL, method and the inputs it needs — or paste an OpenAPI spec." },
                 { title: "Decide who may run it", body: "Read-only actions run freely; anything that changes data asks the visitor to confirm." },
@@ -265,7 +273,7 @@ const START = [
     t("action-live", "First action live", "marketing", "action.first_live", "{{action_name}} is live — your agent can use it now", {
         preheader: "Every call is logged with its inputs and the response, so you can see exactly what happened.",
         eyebrow: "Action live",
-        heading: "{{action_name}} is live",
+        heading: "{{action_name}} is live.",
         tint: "clay",
         body: [
             lead(hi),
@@ -283,7 +291,7 @@ const START = [
     t("tables-nudge", "Try tables", "marketing", "action.first_live", "No API? Give your agent a spreadsheet", {
         preheader: "Upload a table and the agent finds the visitor's row — orders, bookings, licences.",
         eyebrow: "Tip",
-        heading: "Not everything lives behind an API",
+        heading: "Not everything lives behind an API.",
         tint: "sage",
         body: [
             lead(hi),
@@ -297,7 +305,7 @@ const START = [
     t("table-created", "First table", "marketing", "table.first_created", "{{table_name}} is ready for your agent", {
         preheader: "{{rows_label}} the agent can look up for the right visitor.",
         eyebrow: "Table ready",
-        heading: "{{table_name}} is ready",
+        heading: "{{table_name}} is ready.",
         tint: "sage",
         body: [
             lead(hi),
@@ -310,7 +318,7 @@ const START = [
     t("procedures-nudge", "Try procedures", "marketing", "table.first_created", "Write your returns process once. Your agent follows it every time.", {
         preheader: "Procedures are step-by-step flows: check, ask, act, confirm.",
         eyebrow: "Tip",
-        heading: "Turn a process into steps your agent follows",
+        heading: "Turn a process into steps your agent follows.",
         tint: "sky",
         body: [
             lead(hi),
@@ -328,7 +336,7 @@ const START = [
     t("procedure-live", "First procedure live", "marketing", "procedure.first_live", "{{procedure_name}} is live", {
         preheader: "Your agent now follows it step by step whenever it applies.",
         eyebrow: "Procedure live",
-        heading: "{{procedure_name}} is live",
+        heading: "{{procedure_name}} is live.",
         tint: "sky",
         body: [
             lead(hi),
@@ -341,7 +349,7 @@ const START = [
     t("email-channel-live", "Email channel live", "marketing", "email_channel.first_received", "Your agent answered its first email", {
         preheader: "Support email now gets the same agent, the same content and the same handoffs.",
         eyebrow: "Email channel",
-        heading: "Your agent now answers email too",
+        heading: "Your agent now answers email too.",
         tint: "teal",
         body: [
             lead(hi),
@@ -354,7 +362,7 @@ const START = [
     t("email-channel-nudge", "Answer email too", "marketing", "account.day_12", "Your agent can answer your support inbox too", {
         preheader: "Forward support@ to Zealoop and the same agent replies by email.",
         eyebrow: "Tip",
-        heading: "One agent, chat and email",
+        heading: "One agent, chat and email.",
         tint: "teal",
         body: [
             lead(hi),
@@ -368,7 +376,7 @@ const START = [
     t("team-nudge", "Invite your team", "marketing", "account.day_12", "Bring your team into {{workspace}}", {
         preheader: "Handoffs go faster when the people who answer them are in the inbox.",
         eyebrow: "Tip",
-        heading: "Handoffs go faster with your team here",
+        heading: "Handoffs go faster with your team here.",
         tint: "sand",
         body: [
             lead(hi),
@@ -385,7 +393,7 @@ const START = [
     t("insights-tip", "What visitors ask", "marketing", "account.day_30", "The questions your content doesn't answer yet", {
         preheader: "Analytics shows what's resolved, what's handed over, and where your content has gaps.",
         eyebrow: "A month in",
-        heading: "Your visitors are telling you what's missing",
+        heading: "Your visitors are telling you what's missing.",
         tint: "sky",
         body: [
             lead(hi),
@@ -404,7 +412,7 @@ const START = [
     t("mcp-tip", "Let your AI set it up", "marketing", "account.day_30", "Let Claude or Cursor manage Zealoop for you", {
         preheader: "Connect over MCP and ask your coding agent to add content, rules or actions.",
         eyebrow: "Tip",
-        heading: "Your coding agent can run Zealoop for you",
+        heading: "Your coding agent can run Zealoop for you.",
         tint: "stone",
         body: [
             lead(hi),

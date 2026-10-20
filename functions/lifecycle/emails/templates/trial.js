@@ -16,7 +16,7 @@ const TRIAL = [
     t("trial-ending-7", "Trial ends in a week", "transactional", "trial.ending_7", "{{days_left}} left on your Zealoop trial", {
         preheader: "Nothing breaks when it ends. Here's exactly what changes, and what doesn't.",
         eyebrow: "Trial · {{days_left}} left",
-        heading: "Your trial ends {{trial_ends_on}}",
+        heading: "Your trial ends {{trial_ends_on}}.",
         tint: "sand",
         body: [
             lead(hi),
@@ -37,7 +37,7 @@ const TRIAL = [
     t("trial-ending-2", "Trial ends in two days", "transactional", "trial.ending_2", "Your Zealoop trial ends {{trial_ends_on}}", {
         preheader: "Pick a plan to keep actions, tables and the higher limit running without a gap.",
         eyebrow: "Trial · {{days_left}} left",
-        heading: "{{days_left}} left on your trial",
+        heading: "{{days_left}} left on your trial.",
         tint: "clay",
         body: [
             lead(hi),

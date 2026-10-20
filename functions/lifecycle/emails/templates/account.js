@@ -10,7 +10,7 @@ const ACCOUNT = [
     t("member-invited", "Invitation", "transactional", "member.invited", "{{inviter_name}} invited you to {{workspace}} on Zealoop", {
         preheader: "Join as {{role}} to answer handoffs and help run the agent.",
         eyebrow: "Invitation",
-        heading: "Join {{workspace}} on Zealoop",
+        heading: "Join {{workspace}} on Zealoop.",
         tint: "teal",
         body: [
             lead(hi),
@@ -24,7 +24,7 @@ const ACCOUNT = [
     t("member-joined", "Teammate joined", "transactional", "member.joined", "{{member_email}} joined {{workspace}}", {
         preheader: "They've opened the workspace for the first time.",
         eyebrow: "Team",
-        heading: "{{member_email}} joined {{workspace}}",
+        heading: "{{member_email}} joined {{workspace}}.",
         tint: "sage",
         body: [
             lead(hi),
@@ -37,7 +37,7 @@ const ACCOUNT = [
     t("member-removed", "Removed from workspace", "transactional", "member.removed", "You no longer have access to {{workspace}}", {
         preheader: "An admin removed your seat. Your own account is untouched.",
         eyebrow: "Team",
-        heading: "You've been removed from {{workspace}}",
+        heading: "You've been removed from {{workspace}}.",
         tint: "stone",
         body: [
             lead(hi),
@@ -50,7 +50,7 @@ const ACCOUNT = [
     t("password-changed", "Password changed", "transactional", "security.password_changed", "Your Zealoop password was changed", {
         preheader: "Every other session has been signed out.",
         eyebrow: "Security",
-        heading: "Your password was changed",
+        heading: "Your password was changed.",
         tint: "stone",
         body: [
             lead(hi),
@@ -64,7 +64,7 @@ const ACCOUNT = [
     t("secret-rotated", "Widget secret rotated", "transactional", "security.widget_secret_rotated", "The identity secret for {{workspace}} was rotated", {
         preheader: "Update your server so signed visitor identities keep verifying.",
         eyebrow: "Security",
-        heading: "The widget secret was rotated",
+        heading: "The widget secret was rotated.",
         tint: "sand",
         body: [
             lead(hi),
@@ -83,7 +83,7 @@ const ACCOUNT = [
     t("agent-connected", "Agent connected", "transactional", "security.agent_connected", "{{client}} was connected to {{workspace}}", {
         preheader: "An MCP client can now read and change this workspace's setup.",
         eyebrow: "Security",
-        heading: "An AI agent was connected",
+        heading: "An AI agent was connected.",
         tint: "sky",
         body: [
             lead(hi),
@@ -98,7 +98,7 @@ const ACCOUNT = [
     t("workspace-suspended", "Workspace suspended", "transactional", "workspace.suspended", "{{workspace}} has been suspended", {
         preheader: "The widget, dashboard and API are paused. Nothing has been deleted.",
         eyebrow: "Account",
-        heading: "{{workspace}} is suspended",
+        heading: "{{workspace}} is suspended.",
         tint: "clay",
         body: [
             lead(hi),
@@ -111,7 +111,7 @@ const ACCOUNT = [
     t("workspace-reinstated", "Workspace restored", "transactional", "workspace.reinstated", "{{workspace}} is active again", {
         preheader: "Everything is back exactly as it was.",
         eyebrow: "Account",
-        heading: "{{workspace}} is back",
+        heading: "{{workspace}} is back.",
         tint: "teal",
         body: [
             lead(hi),

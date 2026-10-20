@@ -11,7 +11,7 @@ const CAMPAIGNS = [
     t("campaign-product-update", "Campaign · Product update", "marketing", null, "What's new in Zealoop this month", {
         preheader: "The three changes worth knowing about, in two minutes.",
         eyebrow: "Product update",
-        heading: "What's new this month",
+        heading: "What's new this month.",
         tint: "teal",
         body: [
             lead(hi),
@@ -77,7 +77,7 @@ const CAMPAIGNS = [
     t("campaign-survey", "Campaign · Survey", "marketing", null, "Two minutes to shape what we build next", {
         preheader: "Five questions. Every answer is read by the team.",
         eyebrow: "Survey",
-        heading: "Help us decide what's next",
+        heading: "Help us decide what's next.",
         tint: "stone",
         body: [
             lead(hi),
