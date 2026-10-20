@@ -6,7 +6,7 @@
     "main": "server.js",
     "scripts": {
         "dev": "node --watch server.js",
-        "start": "node server.js",
+        "start": "node boot.js",
         "seed:widget-demo": "node scripts/widgetDemo.js",
         "seed": "node scripts/seed.js",
         "reset": "node scripts/reset.js",
@@ -18,6 +18,7 @@
         "search:indexes": "node scripts/searchIndexes.js"
     },
     "dependencies": {
+        "@aws-sdk/client-secrets-manager": "^3.1153.0",
         "@modelcontextprotocol/node": "^2.1.0",
         "@modelcontextprotocol/server": "^2.2.0",
         "cookie-parser": "^1.4.7",
