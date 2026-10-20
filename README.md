@@ -314,6 +314,16 @@ For isolated browser testing, run `node scripts/runTests.js --serve`. It prints
 the temporary API URL and an `environment.json` path for the widget browser
 suites. Stop it with Ctrl+C to clean up the API and its disposable database.
 
+Production settings live in one AWS Secrets Manager secret, `zealoop/api` in
+`ap-south-1`, stored as JSON key/value pairs. `npm start` runs `boot.js`, which
+loads it when `ZEALOOP_SECRET_ID` is set (a bare name uses
+`ZEALOOP_SECRET_REGION`, default `ap-south-1`; an ARN carries its region) and
+then starts `server.js`. An Elastic Beanstalk environment property with the
+same name wins over the secret, and empty values are skipped. Settings are
+read once at start: after editing the secret, restart the app servers. The
+instance role needs `secretsmanager:GetSecretValue` on that secret. Without
+`ZEALOOP_SECRET_ID`, `server.js` reads `.env` as before.
+
 Configure `EMAIL_API_KEY` and a verified `EMAIL_FROM` sender in Resend for
 verification and password recovery. Without delivery, production signup and
 recovery fail explicitly. `ALLOW_DEV_AUTH_LINKS=true` exposes links only on an
