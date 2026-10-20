@@ -129,6 +129,7 @@ router.post("/:orgId/members", reqOrgOwnerAuth, requireRole(...OWNER_OR_ADMIN), 
             orgId: req.params.orgId,
             email: req.body.email,
             role: req.body.role,
+            inviterEmail: req.auth.email,
         });
         return res.status(status).json(json);
     } catch (error) {

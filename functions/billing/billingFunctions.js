@@ -14,6 +14,7 @@ const Org = require("../../models/org/org");
 const generalFunctions = require("../utilFunctions/generalFunctions");
 const usageFunctions = require("./usageFunctions");
 const { getProvider } = require("./providers");
+const lifecycleHooks = require("../lifecycle/hooks");
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -234,9 +235,11 @@ class BillingFunctions {
 
             // Mark intent locally, but do not drop the plan — they paid through
             // the end of the period. The webhook confirms the rest.
+            const before = { plan: subscription.plan, status: subscription.status, cancelAtPeriodEnd: subscription.cancelAtPeriodEnd };
             subscription.cancelAtPeriodEnd = true;
             subscription.cancelledAt = new Date();
             await subscription.save();
+            lifecycleHooks.onBillingChange({ orgId, before, after: subscription.toObject() });
 
             return {
                 status: 200,
@@ -464,6 +467,7 @@ class BillingFunctions {
         const ensured = await this._ensureSubscription({ orgId: event.orgId });
         if (!ensured.success) return { success: false, error: "no subscription" };
         const subscription = ensured.subscription;
+        const before = { plan: subscription.plan, status: subscription.status, cancelAtPeriodEnd: subscription.cancelAtPeriodEnd };
 
         if (event.status) subscription.status = event.status;
         if (event.planId && getPlan(event.planId).id === event.planId) subscription.plan = event.planId;
@@ -494,6 +498,7 @@ class BillingFunctions {
         }
 
         await subscription.save();
+        lifecycleHooks.onBillingChange({ orgId: event.orgId, before, after: subscription.toObject() });
         return { success: true };
     }
 }

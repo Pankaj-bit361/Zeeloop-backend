@@ -9,6 +9,7 @@ const { MemberStatus } = require("../../config/enums");
 const { OWNER_OR_ADMIN } = require("../../middlewares/auth");
 const { outboundRequest } = require("../utilFunctions/outboundRequest");
 const { INSTALL, SCOPES, WORKSPACE, normalizeScope, isSubset } = require("./scopes");
+const lifecycleHooks = require("../lifecycle/hooks");
 
 const ISSUER = config.API_URL.replace(/\/$/, "");
 const RESOURCE = `${ISSUER}/mcp`;
@@ -181,6 +182,7 @@ async function decide(requestId, account, body) {
         if (!(error instanceof OAuthError)) throw error;
         return { redirectUrl: callback(row, { error: error.oauthError, error_description: error.message }) };
     }
+    lifecycleHooks.onAgentConnected({ orgId: body.orgId, clientName: row.clientName });
     return { redirectUrl: callback(row, { code }) };
 }
 async function validGrant(row) {

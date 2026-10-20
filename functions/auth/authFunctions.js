@@ -13,6 +13,7 @@ const sessionFunctions = require("../utilFunctions/sessionFunctions");
 const attributeFunctions = require("../config/attributeFunctions");
 const subscriptionFunctions = require("../billing/subscriptionFunctions");
 const emailFunctions = require("../email/emailFunctions");
+const lifecycleHooks = require("../lifecycle/hooks");
 const { SUSPENDED, isSuspended } = require("../admin/suspension");
 
 const GENERIC_ERROR = "Internal server error, please contact support";
@@ -288,13 +289,12 @@ class AuthFunctions {
             // one you come back to. An invited seat also becomes active here —
             // that is what "accepted the invite" means when there is no invite
             // email to click.
-            await Member.updateOne(
-                { memberId: member.memberId },
-                {
-                    lastActiveAt: new Date(),
-                    ...(member.status === MemberStatus.INVITED && { status: MemberStatus.ACTIVE }),
-                }
-            );
+            await Member.updateOne({ memberId: member.memberId }, { lastActiveAt: new Date() });
+            if (member.status === MemberStatus.INVITED) {
+                // Conditional, so two tabs opening at once accept the invite once.
+                const accepted = await Member.updateOne({ memberId: member.memberId, status: MemberStatus.INVITED }, { status: MemberStatus.ACTIVE });
+                if (accepted.modifiedCount === 1) lifecycleHooks.onMemberJoined({ orgId, email: account.email, role: member.role });
+            }
 
             const token = jwt.sign({ orgId: org.orgId, email: account.email, accountId: account.accountId, sessionVersion: account.sessionVersion || 0 }, config.JWT_SECRET, { expiresIn: "1h" });
             return {
@@ -376,6 +376,7 @@ class AuthFunctions {
             // is required, so an expired trial drops to FREE rather than
             // suspending anything.
             await subscriptionFunctions.startTrial({ orgId });
+            lifecycleHooks.onWorkspaceCreated({ account, orgId });
 
             return {
                 status: 201,
@@ -412,7 +413,8 @@ class AuthFunctions {
         if (!account) return { status: 401, json: { success: false, error: "Sign in to verify your email" } };
         const consumed = await this._consumeToken({ token, purpose: TokenPurpose.EMAIL_VERIFY, accountId: account.accountId });
         if (!consumed.success) return { status: 400, json: { success: false, error: "That verification link has expired or already been used" } };
-        await Account.updateOne({ accountId: account.accountId }, { $set: { emailVerifiedAt: new Date() } });
+        const firstTime = await Account.updateOne({ accountId: account.accountId, emailVerifiedAt: null }, { $set: { emailVerifiedAt: new Date() } });
+        if (firstTime.modifiedCount === 1) lifecycleHooks.onSignedUp(account);
         return { status: 200, json: { success: true, data: { ok: true } } };
     }
 
@@ -484,6 +486,7 @@ class AuthFunctions {
                 $inc: { sessionVersion: 1 }, $addToSet: { providers: AuthProvider.PASSWORD },
             }, { new: true });
             if (!changed) return { status: 400, json: { success: false, error: "That reset link is no longer valid. Request a fresh link." } };
+            lifecycleHooks.onPasswordChanged(changed);
 
             await AuthToken.updateMany({ accountId: account.accountId, purpose: TokenPurpose.PASSWORD_RESET, usedAt: null }, { $set: { usedAt: new Date() } });
             return { status: 200, json: { success: true, data: { accountId: changed.accountId, sessionVersion: changed.sessionVersion } } };
@@ -757,6 +760,7 @@ class AuthFunctions {
             lastLoginAt: new Date(),
         });
         console.log("AuthFunctions:_findOrCreateAccount: provisioned account:", account.accountId);
+        lifecycleHooks.onSignedUp(account);
         return { success: true, account };
     }
 

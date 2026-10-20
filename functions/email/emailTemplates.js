@@ -23,7 +23,7 @@ const TEMPLATES = {
             ``,
             `Nothing breaks when it ends — the workspace drops to the Free plan and keeps answering, just with a lower conversation limit and without tables or actions.`,
             ``,
-            `Pick a plan whenever you're ready: ${appUrl}/app/settings/billing`,
+            `Pick a plan whenever you're ready: ${appUrl}/app/billing`,
         ].join("\n"),
     }),
 
@@ -36,7 +36,7 @@ const TEMPLATES = {
             ``,
             `If you've connected tables or actions, those are the parts that pause on the Free plan — your knowledge base and the widget keep working.`,
             ``,
-            `Choose a plan: ${appUrl}/app/settings/billing`,
+            `Choose a plan: ${appUrl}/app/billing`,
         ].join("\n"),
     }),
 
@@ -49,7 +49,7 @@ const TEMPLATES = {
             ``,
             `What changed: a lower monthly conversation limit, and tables and actions are paused until you upgrade. Nothing was deleted.`,
             ``,
-            `Upgrade any time: ${appUrl}/app/settings/billing`,
+            `Upgrade any time: ${appUrl}/app/billing`,
         ].join("\n"),
     }),
 
@@ -62,7 +62,7 @@ const TEMPLATES = {
             ``,
             `Your workspace keeps working normally for the next ${graceDays} days while you sort it out — nothing is suspended today.`,
             ``,
-            `Update your payment method: ${appUrl}/app/settings/billing`,
+            `Update your payment method: ${appUrl}/app/billing`,
         ].join("\n"),
     }),
 
@@ -73,7 +73,7 @@ const TEMPLATES = {
             ``,
             `The payment for ${orgName} is still failing. You have ${daysLeft} days left before the workspace drops to the Free plan.`,
             ``,
-            `Update your payment method: ${appUrl}/app/settings/billing`,
+            `Update your payment method: ${appUrl}/app/billing`,
         ].join("\n"),
     }),
 
@@ -86,7 +86,7 @@ const TEMPLATES = {
             ``,
             `Your agent is still answering and nothing has been deleted. Tables and actions are paused, and the monthly conversation limit is lower.`,
             ``,
-            `Reactivate whenever you like: ${appUrl}/app/settings/billing`,
+            `Reactivate whenever you like: ${appUrl}/app/billing`,
         ].join("\n"),
     }),
 
@@ -99,7 +99,7 @@ const TEMPLATES = {
             ``,
             `At the limit, the agent tells visitors that someone will follow up rather than answering — so this is worth a look before it gets there.`,
             ``,
-            `Usage and plans: ${appUrl}/app/settings/billing`,
+            `Usage and plans: ${appUrl}/app/billing`,
         ].join("\n"),
     }),
 
@@ -112,7 +112,7 @@ const TEMPLATES = {
             ``,
             `Your agent is now telling visitors that the team will follow up, instead of answering. Their questions are still being recorded, so nothing is lost.`,
             ``,
-            `Raise the limit: ${appUrl}/app/settings/billing`,
+            `Raise the limit: ${appUrl}/app/billing`,
         ].join("\n"),
     }),
 

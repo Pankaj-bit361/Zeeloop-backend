@@ -4,6 +4,7 @@ const { AuditAction } = require("../../config/enums");
 const Org = require("../../models/org/org");
 const generalFunctions = require("../utilFunctions/generalFunctions");
 const auditFunctions = require("../audit/auditFunctions");
+const lifecycleHooks = require("../lifecycle/hooks");
 
 // §8.4 — the security settings a workspace owns: which origins may embed the
 // widget, and rotating the secret that signs identify() payloads.
@@ -147,6 +148,7 @@ class SecurityFunctions {
                 detail: { graceUntil: expiresAt },
                 ip,
             });
+            lifecycleHooks.onWidgetSecretRotated({ orgId, actorEmail, graceUntil: expiresAt });
 
             // Returned once. There is no endpoint that reads it back.
             return {

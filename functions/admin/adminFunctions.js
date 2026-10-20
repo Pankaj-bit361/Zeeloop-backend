@@ -12,6 +12,7 @@ const AdminAudit = require("../../models/admin/adminAudit");
 const billingFunctions = require("../billing/billingFunctions");
 const generalFunctions = require("../utilFunctions/generalFunctions");
 const { isSuspended } = require("./suspension");
+const lifecycleHooks = require("../lifecycle/hooks");
 
 /* The admin panel (routes/adminRoutes.js, ADMIN_EMAILS only): the business at
    a glance, every workspace with its plan and usage, and the few changes
@@ -336,6 +337,8 @@ class AdminFunctions {
                 suspend ? { $set: { suspended: { at: new Date(), reason: why, by: adminEmail } } } : { $set: { suspended: { at: null, reason: "", by: "" } } }
             );
             await this._audit({ adminEmail, action: suspend ? "suspend" : "unsuspend", org, reason: why });
+            // The admin's reason is an internal note; the owner is told to get in touch instead.
+            lifecycleHooks.onSuspensionChanged({ orgId, suspended: suspend });
             return { status: 200, json: { success: true, data: { suspended: suspend } } };
         });
     }

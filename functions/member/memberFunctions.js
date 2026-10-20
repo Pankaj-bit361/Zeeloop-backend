@@ -2,6 +2,7 @@ const Member = require("../../models/org/member");
 const Org = require("../../models/org/org");
 const { MemberRole, MemberStatus, IdPrefix } = require("../../config/enums");
 const generalFunctions = require("../utilFunctions/generalFunctions");
+const lifecycleHooks = require("../lifecycle/hooks");
 
 class MemberFunctions {
     // GET /api/org/:orgId/me — the signed-in seat. Self-healing: an org that has
@@ -77,7 +78,7 @@ class MemberFunctions {
 
     // POST /api/org/:orgId/members — creates an INVITED seat. Delivering the
     // invite email is out of scope; the seat is real and shows as pending.
-    async inviteMember({ orgId, email, role }) {
+    async inviteMember({ orgId, email, role, inviterEmail }) {
         console.log("MemberFunctions:inviteMember: orgId:", orgId, "email:", email);
         try {
             if (!orgId || !email) {
@@ -105,6 +106,7 @@ class MemberFunctions {
                 role: memberRole,
                 status: MemberStatus.INVITED,
             });
+            lifecycleHooks.onMemberInvited({ orgId, email: normalized, role: memberRole, inviterEmail });
             return { status: 201, json: { success: true, data: member } };
         } catch (error) {
             console.error("MemberFunctions:inviteMember: Catch block");
@@ -129,6 +131,7 @@ class MemberFunctions {
                 return { status: 409, json: { success: false, error: "The owner seat cannot be removed" } };
             }
             await Member.deleteOne({ orgId, memberId });
+            lifecycleHooks.onMemberRemoved({ orgId, email: member.email });
             return { status: 200, json: { success: true, data: { memberId } } };
         } catch (error) {
             console.error("MemberFunctions:removeMember: Catch block");

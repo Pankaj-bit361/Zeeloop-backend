@@ -11,6 +11,8 @@ const Subscription = require("../../models/billing/subscription");
 const Org = require("../../models/org/org");
 const generalFunctions = require("../utilFunctions/generalFunctions");
 const emailFunctions = require("../email/emailFunctions");
+const lifecycleHooks = require("../lifecycle/hooks");
+const { lifecycleEnabled } = require("../lifecycle/client");
 
 // §0.5 — trial and lifecycle. The part of billing that runs on a clock rather
 // than on a webhook.
@@ -126,7 +128,8 @@ class SubscriptionFunctions {
             await subscription.save();
 
             const org = await Org.findOne({ orgId }).lean();
-            if (org) {
+            // With lifecycle email on, the billing webhook announces the failure to Volanea instead.
+            if (org && !lifecycleEnabled()) {
                 await emailFunctions.send({
                     orgId,
                     kind: EmailKind.PAYMENT_FAILED,
@@ -151,6 +154,8 @@ class SubscriptionFunctions {
 
     async _sendTrialNotices({ at }) {
         let sent = 0;
+        // With lifecycle email on, the hourly lifecycle sweep sends these.
+        if (lifecycleEnabled()) return { sent };
         try {
             const subscriptions = await Subscription.find({
                 status: SubscriptionStatus.TRIALING,
@@ -193,6 +198,7 @@ class SubscriptionFunctions {
             for (const subscription of expired) {
                 // No card was taken, so there is nothing to charge and nothing
                 // to suspend. Drop to FREE and say so.
+                const trialStart = new Date(new Date(subscription.trialEndsAt).getTime() - TRIAL_DAYS * DAY_MS);
                 subscription.status = SubscriptionStatus.EXPIRED;
                 subscription.plan = PlanId.FREE;
                 // The billing period has to keep moving or usage never resets
@@ -207,7 +213,9 @@ class SubscriptionFunctions {
                 );
 
                 const org = await Org.findOne({ orgId: subscription.orgId }).lean();
-                if (org) {
+                if (org && lifecycleEnabled()) {
+                    lifecycleHooks.onTrialEnded({ orgId: subscription.orgId, since: trialStart });
+                } else if (org) {
                     await emailFunctions.send({
                         orgId: subscription.orgId,
                         kind: EmailKind.TRIAL_ENDED,
@@ -228,6 +236,8 @@ class SubscriptionFunctions {
 
     async _sendDunningNotices({ at }) {
         let sent = 0;
+        // With lifecycle email on, the "Payment failed" workflow in Volanea sends the reminders.
+        if (lifecycleEnabled()) return { sent };
         try {
             const pastDue = await Subscription.find({
                 status: SubscriptionStatus.PAST_DUE,
@@ -269,6 +279,7 @@ class SubscriptionFunctions {
             });
 
             for (const subscription of lapsed) {
+                const previousPlan = subscription.plan;
                 subscription.status = SubscriptionStatus.EXPIRED;
                 subscription.plan = PlanId.FREE;
                 subscription.currentPeriodStart = at;
@@ -281,7 +292,9 @@ class SubscriptionFunctions {
                 );
 
                 const org = await Org.findOne({ orgId: subscription.orgId }).lean();
-                if (org) {
+                if (org && lifecycleEnabled()) {
+                    lifecycleHooks.onSubscriptionLapsed({ orgId: subscription.orgId, previousPlan });
+                } else if (org) {
                     await emailFunctions.send({
                         orgId: subscription.orgId,
                         kind: EmailKind.SUBSCRIPTION_SUSPENDED,
