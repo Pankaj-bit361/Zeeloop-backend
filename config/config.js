@@ -321,6 +321,16 @@ module.exports = {
     LIFECYCLE_CRON: process.env.LIFECYCLE_CRON || "0 9 * * *",
     SCHEDULED_JOBS_ENABLED: process.env.SCHEDULED_JOBS_ENABLED !== "false",
 
+    // ── Customer lifecycle email via Volanea (functions/lifecycle) ───
+    // A secret key for the "Zealoop" project in Volanea. Without it nothing is
+    // announced and the plain notices above keep working; with it, onboarding,
+    // usage, billing and report emails are Volanea templates and workflows.
+    VOLANEA_LIFECYCLE_KEY: process.env.VOLANEA_LIFECYCLE_KEY || "",
+    VOLANEA_API_URL: process.env.VOLANEA_API_URL || "https://api.volanea.com",
+    // "off" stops every lifecycle event without removing the key.
+    LIFECYCLE_EMAILS: process.env.LIFECYCLE_EMAILS || "on",
+    LIFECYCLE_SWEEP_CRON: process.env.LIFECYCLE_SWEEP_CRON || "17 * * * *",
+
     // ── Setup wizard and brand import (§1.6, §1.7) ───────────────────
     BRANDFETCH_API_KEY: process.env.BRANDFETCH_API_KEY || "",
     BRANDFETCH_BASE_URL: process.env.BRANDFETCH_BASE_URL || "https://api.brandfetch.io/v2",

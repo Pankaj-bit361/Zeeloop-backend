@@ -3,6 +3,7 @@ const { getPlan, SOFT_LIMIT_RATIO, isWithinLimit, UNLIMITED } = require("../../c
 const Subscription = require("../../models/billing/subscription");
 const UsageRecord = require("../../models/billing/usageRecord");
 const generalFunctions = require("../utilFunctions/generalFunctions");
+const lifecycleHooks = require("../lifecycle/hooks");
 
 // Reads the Subscription model directly rather than going through
 // billingFunctions, which requires this file — importing back would be a cycle.
@@ -201,7 +202,14 @@ class UsageFunctions {
         }
 
         if (Object.keys(updates).length === 0) return { success: true };
-        await UsageRecord.updateOne({ usageRecordId: record.usageRecordId }, { $set: updates });
+        // Only while every field being stamped is still empty, so two turns that
+        // cross a threshold together stamp it — and announce it — once.
+        const stillEmpty = Object.fromEntries(Object.keys(updates).map((field) => [field, null]));
+        const stamped = await UsageRecord.updateOne({ usageRecordId: record.usageRecordId, ...stillEmpty }, { $set: updates });
+        if (stamped.modifiedCount === 1) {
+            const crossed = [updates.softLimitNotifiedAt && "soft", updates.hardLimitReachedAt && "hard", updates.costCeilingReachedAt && "cost"].filter(Boolean);
+            lifecycleHooks.onUsageThreshold({ orgId: record.orgId, record, plan, crossed });
+        }
         return { success: true };
     }
 

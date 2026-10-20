@@ -47,6 +47,7 @@ const inboundEmailRoutes = require("./routes/inboundEmailRoutes");
 const adminRoutes = require("./routes/adminRoutes");
 const attributionFunctions = require("./functions/analytics/attributionFunctions");
 const subscriptionFunctions = require("./functions/billing/subscriptionFunctions");
+const lifecycleSweep = require("./functions/lifecycle/sweep");
 const qualityFunctions = require("./functions/eval/qualityFunctions");
 const crawlWorker = require("./functions/knowledge/crawlWorker");
 const knowledgeFunctions = require("./functions/knowledge/knowledgeFunctions");
@@ -556,6 +557,16 @@ scheduleJob("quality", config.QUALITY_CRON, () => qualityFunctions.gradePending(
 // Trial notices, dunning and suspension (§0.5). Idempotent end to end, which is
 // what makes it safe on a schedule that will occasionally fire twice.
 scheduleJob("lifecycle", config.LIFECYCLE_CRON, () => subscriptionFunctions.runLifecycleSweep({}));
+
+// Customer lifecycle email (functions/lifecycle): hourly, it finds what each
+// workspace's owner should hear about — milestones, trial notices, failures,
+// weekly and monthly numbers — and announces it to Volanea once. Does nothing
+// without VOLANEA_LIFECYCLE_KEY.
+scheduleJob("lifecycle-email", config.LIFECYCLE_SWEEP_CRON, async () => {
+    if (!lifecycleSweep.lifecycleEnabled()) return;
+    const result = await lifecycleSweep.runLifecycleSweep({});
+    console.log(`Lifecycle: sweep told ${result.told}, baselined ${result.baselined}${result.stopped ? " (stopped early)" : ""}`);
+});
 
 // §1.3 — the crawl worker. Crawling used to run inline on the request thread,
 // which blocked it and could not survive a deploy. This is an in-process poller

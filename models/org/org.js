@@ -187,6 +187,10 @@ const orgSchema = new mongoose.Schema(
             reason: { type: String, default: "" },
             by: { type: String, default: "" },
         },
+        /* What the lifecycle sweep (functions/lifecycle) has already told this
+           workspace's owner: one flag per milestone, plus the bookkeeping that
+           keeps tips spaced. Written only by the sweep. */
+        lifecycle: { type: mongoose.Schema.Types.Mixed, default: null },
     },
     {
         timestamps: true,
@@ -196,6 +200,7 @@ const orgSchema = new mongoose.Schema(
                 delete ret.__v;
                 delete ret.widgetSecret;
                 delete ret.previousWidgetSecret;
+                delete ret.lifecycle;
                 return ret;
             },
         },
