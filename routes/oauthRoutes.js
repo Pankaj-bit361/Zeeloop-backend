@@ -1,5 +1,6 @@
 const express = require("express");
 const authFunctions = require("../functions/auth/authFunctions");
+const { consentFromCookies } = require("../functions/productAnalytics/mixpanel");
 const generalFunctions = require("../functions/utilFunctions/generalFunctions");
 const sessionFunctions = require("../functions/utilFunctions/sessionFunctions");
 const config = require("../config/config");
@@ -41,6 +42,7 @@ router.get("/google/callback", async (req, res) => {
             code: req.query.code,
             state: req.query.state,
             expectedState: req.cookies && req.cookies[config.OAUTH_STATE_COOKIE],
+            consent: consentFromCookies(req.cookies),
         });
         sessionFunctions.clearOAuthStateCookie(res);
         if (result.accountId) sessionFunctions.setSessionCookie(res, result.accountId, result.sessionVersion);
@@ -72,6 +74,7 @@ router.get("/github/callback", async (req, res) => {
             code: req.query.code,
             state: req.query.state,
             expectedState: req.cookies && req.cookies[config.OAUTH_STATE_COOKIE],
+            consent: consentFromCookies(req.cookies),
         });
         sessionFunctions.clearOAuthStateCookie(res);
         if (result.accountId) sessionFunctions.setSessionCookie(res, result.accountId, result.sessionVersion);

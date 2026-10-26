@@ -32,6 +32,7 @@ const expansionFunctions = require("../expansion/expansionFunctions");
 const widgetConfigFunctions = require("../widget/widgetConfigFunctions");
 const responseComponentFunctions = require("../widget/responseComponentFunctions");
 const searchFunctions = require("../knowledge/searchFunctions");
+const productAnalytics = require("../productAnalytics/events");
 
 // Shown to end users on a workspace that has hit its conversation quota or cost
 // ceiling. Deliberately says nothing about billing: the visitor is the
@@ -459,6 +460,8 @@ class ChatFunctions {
                 outputTokens: turn.outputTokens || 0,
                 isNewConversation,
             });
+            // Product analytics: the workspace's first real conversation is the Value Moment.
+            if (isNewConversation) productAnalytics.announceFirstConversation({ orgId: org.orgId, conversationId, channel: conversation.channel });
 
             return {
                 status: 200,

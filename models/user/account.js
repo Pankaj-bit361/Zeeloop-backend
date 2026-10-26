@@ -25,6 +25,11 @@ const accountSchema = new mongoose.Schema(
         sessionVersion: { type: Number, default: 0 },
         providers: { type: [String], enum: Object.values(AuthProvider), default: [] },
         lastLoginAt: { type: Date, default: null },
+        // Whether this person accepted product analytics (Mixpanel), copied from
+        // the `zealoop_consent` cookie the banner on zealoop.com and
+        // app.zealoop.com sets. null = never asked or not seen yet: nothing is
+        // sent. See functions/productAnalytics.
+        analyticsConsent: { type: String, enum: [null, "granted", "denied"], default: null },
     },
     {
         timestamps: true,

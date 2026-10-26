@@ -175,4 +175,4 @@ async function save(orgId, state, flags, snapshot, stamp, tipAt) {
     await Org.updateOne({ orgId }, { $set: { lifecycle: next } });
 }
 
-module.exports = { runLifecycleSweep, snapshotOf, lifecycleEnabled };
+module.exports = { runLifecycleSweep, snapshotOf, lifecycleEnabled, REAL };
