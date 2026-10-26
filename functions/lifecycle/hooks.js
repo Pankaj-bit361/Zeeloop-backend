@@ -46,7 +46,7 @@ function onWorkspaceCreated({ account, orgId }) {
             workspace: owner.org.name,
             trial_days: String(TRIAL_DAYS),
             trial_ends_on: trialEnds ? shortDate(trialEnds) : "",
-        }, contactFor(account, owner.org, owner.subscription, "owner"));
+        }, contactFor(account, owner.org, owner.subscription, "owner"), { orgId });
     });
 }
 
@@ -166,7 +166,7 @@ function onBillingChange({ orgId, before, after }) {
         if (!events.length) return;
         const owner = await ownerOf(orgId, { subscription: after });
         if (!owner) return;
-        for (const [event, data] of events) await announce(owner.email, event, data, owner.contact);
+        for (const [event, data] of events) await announce(owner.email, event, data, owner.contact, { orgId });
     });
 }
 
@@ -177,7 +177,7 @@ function onTrialEnded({ orgId, since }) {
         if (!owner) return;
         const window = { orgId, conversationId: { $not: /^conv_eval_/ }, ...(since ? { createdAt: { $gte: since } } : {}) };
         const [conversations, resolved] = await Promise.all([Conversation.countDocuments(window), Conversation.countDocuments({ ...window, isResolved: true })]);
-        await announce(owner.email, "trial.ended", { conversations: num(conversations), resolved_pct: conversations ? pct(resolved / conversations) : "—" }, owner.contact);
+        await announce(owner.email, "trial.ended", { conversations: num(conversations), resolved_pct: conversations ? pct(resolved / conversations) : "—" }, owner.contact, { orgId });
     });
 }
 
@@ -185,7 +185,7 @@ function onTrialEnded({ orgId, since }) {
 function onSubscriptionLapsed({ orgId, previousPlan }) {
     later(async () => {
         const owner = await ownerOf(orgId);
-        if (owner) await announce(owner.email, "billing.subscription_ended", { plan_name: getPlan(previousPlan).name }, owner.contact);
+        if (owner) await announce(owner.email, "billing.subscription_ended", { plan_name: getPlan(previousPlan).name }, owner.contact, { orgId });
     });
 }
 
@@ -206,10 +206,10 @@ function onUsageThreshold({ orgId, record, plan, crossed }) {
             }, owner.contact);
         }
         if (crossed.includes("hard") && limit) {
-            await announce(owner.email, "usage.quota_reached", { limit_label: plural(limit, "conversation"), resets_on: resetsOn }, owner.contact);
+            await announce(owner.email, "usage.quota_reached", { limit_label: plural(limit, "conversation"), resets_on: resetsOn }, owner.contact, { orgId });
         }
         if (crossed.includes("cost")) {
-            await announce(owner.email, "usage.cost_ceiling", { resets_on: resetsOn }, owner.contact);
+            await announce(owner.email, "usage.cost_ceiling", { resets_on: resetsOn }, owner.contact, { orgId });
         }
     });
 }

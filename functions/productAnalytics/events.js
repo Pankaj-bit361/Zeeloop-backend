@@ -4,6 +4,8 @@ const Member = require("../../models/org/member");
 const Account = require("../../models/user/account");
 const Conversation = require("../../models/conversation/conversation");
 const { REAL } = require("../lifecycle/sweep");
+const { ownerOf } = require("../lifecycle/owner");
+const { alertsEnabled, alertLater } = require("../lifecycle/slack");
 const { analyticsEnabled, trackEvent } = require("./mixpanel");
 
 // The product events Zealoop sends to Mixpanel (mixpanel.js holds the rules
@@ -46,12 +48,20 @@ function announceSignUp({ account, method }) {
 // "conversation.first", evaluation runs excluded. So it fires once per
 // workspace, and never for a workspace whose first conversation came before
 // this code. Attributed to the workspace owner.
+//
+// The same moment is the team's "first visitor" alert in #zealoop-alerts
+// (lifecycle/slack.js). That one is internal, so it doesn't wait on the
+// owner's analytics consent the way the Mixpanel event does.
 function announceFirstConversation({ orgId, conversationId, channel }) {
     void (async () => {
         try {
-            if (!analyticsEnabled()) return;
+            if (!analyticsEnabled() && !alertsEnabled()) return;
             const first = await Conversation.findOne({ orgId, ...REAL }).sort({ createdAt: 1 }).select("conversationId").lean();
             if (!first || first.conversationId !== conversationId) return;
+            if (alertsEnabled()) {
+                const workspaceOwner = await ownerOf(orgId);
+                if (workspaceOwner) alertLater(workspaceOwner.email, "conversation.first_visitor", { channel: channel === "EMAIL" ? "Email" : "Widget" }, workspaceOwner.contact, { orgId });
+            }
             const org = await Org.findOne({ orgId }).select("ownerEmail").lean();
             const owner = org && (await Account.findOne({ email: org.ownerEmail.toLowerCase() }).select("accountId analyticsConsent createdAt").lean());
             if (!owner) return;

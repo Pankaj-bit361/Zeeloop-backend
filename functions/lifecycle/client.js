@@ -1,5 +1,6 @@
 "use strict";
 const config = require("../../config/config");
+const { alertLater } = require("./slack");
 
 // Sends a lifecycle event about one of our customers to the "Zealoop" project
 // in Volanea, over its public /v1/events API. The workflows there decide what
@@ -11,6 +12,11 @@ const config = require("../../config/config");
 // told once it really was.
 //
 // A no-op without VOLANEA_LIFECYCLE_KEY (local dev, CI, tests that don't opt in).
+//
+// An accepted event on the Slack allow-list is also posted to #zealoop-alerts
+// (slack.js); posting only once Volanea took it keeps Slack to one message per
+// moment, because a refused sweep event is retried next hour. `meta.orgId`
+// links the alert to the workspace in /admin; it is never sent to Volanea.
 
 const TIMEOUT_MS = 5_000;
 
@@ -29,7 +35,7 @@ function isReservedAddress(email) {
     return RESERVED_DOMAIN.test(domain);
 }
 
-async function announce(email, event, data = {}, contact = {}) {
+async function announce(email, event, data = {}, contact = {}, meta = {}) {
     if (!lifecycleEnabled() || !email || isReservedAddress(email)) return false;
     const { firstName, lastName, ...custom } = contact;
     try {
@@ -52,6 +58,7 @@ async function announce(email, event, data = {}, contact = {}) {
             signal: AbortSignal.timeout(TIMEOUT_MS),
         });
         if (!response.ok) console.log(`Lifecycle: ${event} refused by Volanea: HTTP ${response.status}`);
+        else alertLater(email, event, data, contact, meta);
         return response.ok;
     } catch (error) {
         console.log(`Lifecycle: ${event} could not be sent; the caller is unaffected:`, error.message);
