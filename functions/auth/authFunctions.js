@@ -14,6 +14,7 @@ const attributeFunctions = require("../config/attributeFunctions");
 const subscriptionFunctions = require("../billing/subscriptionFunctions");
 const emailFunctions = require("../email/emailFunctions");
 const lifecycleHooks = require("../lifecycle/hooks");
+const productAnalytics = require("../productAnalytics/events");
 const { SUSPENDED, isSuspended } = require("../admin/suspension");
 
 const GENERIC_ERROR = "Internal server error, please contact support";
@@ -66,7 +67,7 @@ class AuthFunctions {
     }
 
     // POST /api/auth/signup
-    async signup({ name, email, password }) {
+    async signup({ name, email, password, consent }) {
         console.log("AuthFunctions:signup: email:", email);
         try {
             if (config.DISABLE_SIGNUPS) {
@@ -117,7 +118,9 @@ class AuthFunctions {
                 passwordSetAt: new Date(),
                 providers: [AuthProvider.PASSWORD],
                 lastLoginAt: new Date(),
+                analyticsConsent: consent || null,
             });
+            productAnalytics.announceSignUp({ account, method: "email" });
             const verification = await this.sendVerification({ account });
             return { status: 201, json: { success: true, data: { accountId: account.accountId, sessionVersion: account.sessionVersion, ...verification.json.data } } };
         } catch (error) {
@@ -165,8 +168,9 @@ class AuthFunctions {
 
     // GET /api/auth/me — identity plus every org this account can open. The
     // dashboard uses the org list for the workspace switcher and for deciding
-    // whether to send a new account to onboarding.
-    async me({ account }) {
+    // whether to send a new account to onboarding. `consent` is the visitor's
+    // analytics choice from the consent cookie, kept on the account.
+    async me({ account, consent }) {
         console.log("AuthFunctions:me: accountId:", account && account.accountId);
         try {
             if (!account) {
@@ -176,6 +180,7 @@ class AuthFunctions {
             if (!orgs.success) {
                 return { status: 500, json: { success: false, error: GENERIC_ERROR } };
             }
+            await this._recordConsent(account, consent);
             return {
                 status: 200,
                 json: {
@@ -518,7 +523,7 @@ class AuthFunctions {
         return { url: url.toString(), state };
     }
 
-    async googleCallback({ code, state, expectedState }) {
+    async googleCallback({ code, state, expectedState, consent }) {
         console.log("AuthFunctions:googleCallback: run");
         const fail = (reason) => ({ redirectUrl: `${config.APP_URL}/login?error=${reason}` });
         try {
@@ -568,6 +573,7 @@ class AuthFunctions {
                 email,
                 name: claims.name,
                 provider: AuthProvider.GOOGLE,
+                consent,
             });
             if (!resolved.success) return fail(resolved.reason);
 
@@ -599,7 +605,7 @@ class AuthFunctions {
         return { url: url.toString(), state };
     }
 
-    async githubCallback({ code, state, expectedState }) {
+    async githubCallback({ code, state, expectedState, consent }) {
         console.log("AuthFunctions:githubCallback: run");
         const fail = (reason) => ({ redirectUrl: `${config.APP_URL}/login?error=${reason}` });
         try {
@@ -652,6 +658,7 @@ class AuthFunctions {
                 email,
                 name: profile.name || profile.login,
                 provider: AuthProvider.GITHUB,
+                consent,
             });
             if (!resolved.success) return fail(resolved.reason);
 
@@ -712,13 +719,25 @@ class AuthFunctions {
     }
 
     /* ──────────────────────── private ──────────────────────── */
+    // Keeps Account.analyticsConsent in step with the latest choice the API
+    // sees on /me. One conditional write that matches nothing once it is
+    // current. No cookie changes nothing: not having chosen is not withdrawing.
+    async _recordConsent(account, consent) {
+        if (!consent || account.analyticsConsent === consent) return;
+        try {
+            await Account.updateOne({ accountId: account.accountId, analyticsConsent: { $ne: consent } }, { $set: { analyticsConsent: consent } });
+        } catch (error) {
+            console.log("AuthFunctions:_recordConsent: could not record the analytics choice:", error.message);
+        }
+    }
+
     _sessionVersionFilter(version) {
         return version === 0 ? { $or: [{ sessionVersion: 0 }, { sessionVersion: { $exists: false } }] } : { sessionVersion: version };
     }
 
     // Resolves an OAuth identity to an account, creating one if the address is
     // new. Returns {success} like every other private helper here.
-    async _findOrCreateAccount({ email, name, provider }) {
+    async _findOrCreateAccount({ email, name, provider, consent }) {
         const existing = await Account.findOne({ email });
         if (existing) {
             const update = { $set: { lastLoginAt: new Date() }, $addToSet: { providers: provider } };
@@ -758,9 +777,11 @@ class AuthFunctions {
             emailVerifiedAt: new Date(),
             providers: [provider],
             lastLoginAt: new Date(),
+            analyticsConsent: consent || null,
         });
         console.log("AuthFunctions:_findOrCreateAccount: provisioned account:", account.accountId);
         lifecycleHooks.onSignedUp(account);
+        productAnalytics.announceSignUp({ account, method: provider.toLowerCase() });
         return { success: true, account };
     }
 

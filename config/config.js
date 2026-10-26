@@ -331,6 +331,17 @@ module.exports = {
     LIFECYCLE_EMAILS: process.env.LIFECYCLE_EMAILS || "on",
     LIFECYCLE_SWEEP_CRON: process.env.LIFECYCLE_SWEEP_CRON || "17 * * * *",
 
+    // ── Product analytics via Mixpanel (functions/productAnalytics, docs/ANALYTICS.md) ──
+    // The project token is public by design (every page on zealoop.com ships
+    // it), so production falls back to Zealoop's own project rather than going
+    // silently dark on a missing variable. Anywhere else nothing is sent unless
+    // MIXPANEL_TOKEN is set on purpose.
+    MIXPANEL_TOKEN: process.env.MIXPANEL_TOKEN || (process.env.NODE_ENV === "production" ? "1cd1e6e91dab886f2276efcaa90ef578" : ""),
+    // Only for EU or India data residency: api-eu.mixpanel.com or api-in.mixpanel.com.
+    MIXPANEL_HOST: process.env.MIXPANEL_HOST || "api.mixpanel.com",
+    // "off" stops every event without removing the token.
+    MIXPANEL_ENABLED: process.env.MIXPANEL_ENABLED || "on",
+
     // ── Setup wizard and brand import (§1.6, §1.7) ───────────────────
     BRANDFETCH_API_KEY: process.env.BRANDFETCH_API_KEY || "",
     BRANDFETCH_BASE_URL: process.env.BRANDFETCH_BASE_URL || "https://api.brandfetch.io/v2",

@@ -18,6 +18,7 @@ const generalFunctions = require("../utilFunctions/generalFunctions");
 const agentFunctions = require("../agent/agentFunctions");
 const emailFunctions = require("./emailFunctions");
 const usageFunctions = require("../billing/usageFunctions");
+const productAnalytics = require("../productAnalytics/events");
 const { planHasFeature } = require("../../config/plans");
 
 // §4.8 — the email channel. Same pipeline, same guidance, same everything: the
@@ -161,6 +162,8 @@ class InboundEmailFunctions {
                 outputTokens: turn.outputTokens || 0,
                 isNewConversation: isNew,
             });
+            // Product analytics: the workspace's first real conversation is the Value Moment.
+            if (isNew) productAnalytics.announceFirstConversation({ orgId: org.orgId, conversationId: conversation.conversationId, channel: conversation.channel });
 
             // Escalated threads do not get an auto-reply. Sending "a human will
             // be in touch" and then having a human be in touch is two emails

@@ -3,6 +3,7 @@ const config = require("../config/config");
 const { authRateLimit } = require("../middlewares/rateLimit");
 const geoFunctions = require("../functions/utilFunctions/geoFunctions");
 const authFunctions = require("../functions/auth/authFunctions");
+const { consentFromCookies } = require("../functions/productAnalytics/mixpanel");
 const generalFunctions = require("../functions/utilFunctions/generalFunctions");
 const sessionFunctions = require("../functions/utilFunctions/sessionFunctions");
 const { reqSessionAuth } = require("../middlewares/auth");
@@ -34,7 +35,7 @@ router.get("/config", async (req, res) => {
 
 router.post("/signup", async (req, res) => {
     try {
-        const result = await authFunctions.signup(req.body);
+        const result = await authFunctions.signup({ ...req.body, consent: consentFromCookies(req.cookies) });
         if (!result.json.success) return res.status(result.status).json(result.json);
         sessionFunctions.setSessionCookie(res, result.json.data.accountId, result.json.data.sessionVersion);
         const { verificationRequired, verificationSent, verificationUrl } = result.json.data;
@@ -68,7 +69,7 @@ router.post("/logout", async (req, res) => {
 
 router.get("/me", reqSessionAuth, async (req, res) => {
     try {
-        const { status, json } = await authFunctions.me({ account: req.account });
+        const { status, json } = await authFunctions.me({ account: req.account, consent: consentFromCookies(req.cookies) });
         return res.status(status).json(json);
     } catch (error) {
         return fail(req, res, error);
