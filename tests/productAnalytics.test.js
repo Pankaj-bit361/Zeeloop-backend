@@ -113,7 +113,7 @@ describe("productAnalytics/mixpanel", () => {
         try {
             assert.equal(load({ NODE_ENV: "test", MIXPANEL_TOKEN: undefined }).MIXPANEL_TOKEN, "");
             assert.equal(load({ NODE_ENV: "test", MIXPANEL_TOKEN: "tok_on_purpose" }).MIXPANEL_TOKEN, "tok_on_purpose");
-            assert.equal(load({ NODE_ENV: "production", MIXPANEL_TOKEN: undefined }).MIXPANEL_TOKEN, "1cd1e6e91dab886f2276efcaa90ef578");
+            assert.equal(load({ NODE_ENV: "production", MIXPANEL_TOKEN: undefined }).MIXPANEL_TOKEN, "1cd1e6e91dab886f2276efcaa90ef578"); // gitleaks:allow (the public Mixpanel project token)
         } finally {
             load(saved);
             require.cache[path] = cached;
