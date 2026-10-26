@@ -1,0 +1,2 @@
+# Public Mixpanel project token in a config test (it only lets you send events in; every page ships it).
+51ba75e37d36eaea55ad699f2e190285550914aa:tests/productAnalytics.test.js:generic-api-key:116
