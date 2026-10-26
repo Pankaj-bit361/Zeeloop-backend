@@ -331,6 +331,13 @@ module.exports = {
     LIFECYCLE_EMAILS: process.env.LIFECYCLE_EMAILS || "on",
     LIFECYCLE_SWEEP_CRON: process.env.LIFECYCLE_SWEEP_CRON || "17 * * * *",
 
+    // ── Business alerts in #zealoop-alerts (functions/lifecycle/slack.js) ──
+    // The channel's Slack incoming webhook (the same secret CI posts failures
+    // to). Without it nothing is posted. Never log it.
+    ALERT_WEBHOOK_URL: process.env.ALERT_WEBHOOK_URL || "",
+    // "off" stops every alert without removing the webhook.
+    SLACK_ALERTS: process.env.SLACK_ALERTS || "on",
+
     // ── Product analytics via Mixpanel (functions/productAnalytics, docs/ANALYTICS.md) ──
     // The project token is public by design (every page on zealoop.com ships
     // it), so production falls back to Zealoop's own project rather than going

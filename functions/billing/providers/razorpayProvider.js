@@ -52,6 +52,14 @@ const STATUS_MAP = {
     expired: SubscriptionStatus.EXPIRED,
 };
 
+// Events that move money, for the team's payment alert (lifecycle/slack.js).
+// `pending` is a failed charge being retried, `halted` is retries exhausted.
+const PAYMENT_OUTCOMES = {
+    "subscription.charged": "succeeded",
+    "subscription.pending": "failed",
+    "subscription.halted": "failed",
+};
+
 // Razorpay requires a cycle count up front; there is no "until cancelled".
 // 120 monthly cycles is ten years, which is past the point anyone is reasoning
 // about, and it is renewed rather than terminal.
@@ -157,6 +165,10 @@ class RazorpayProvider {
             cancelAtPeriodEnd: Boolean(subscription?.end_at && subscription.status === "cancelled"),
             updatePaymentMethodUrl: subscription?.short_url || null,
             customerPortalUrl: null,
+            // Amounts arrive in the smallest unit (paise, cents).
+            payment: PAYMENT_OUTCOMES[eventType]
+                ? { outcome: PAYMENT_OUTCOMES[eventType], amount: payment && payment.amount != null ? payment.amount / 100 : null, currency: (payment && payment.currency) || null }
+                : null,
         };
     }
 

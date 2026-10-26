@@ -140,7 +140,7 @@ async function runLifecycleSweep({ now = new Date() } = {}) {
         for (const key of silent) flags[key] = stamp;
         let tipAt = state.lastTipAt;
         for (const due of send) {
-            const ok = await announce(owner.email, due.event, due.data, owner.contact);
+            const ok = await announce(owner.email, due.event, due.data, owner.contact, { orgId: org.orgId });
             if (!ok) {
                 failures += 1;
                 if (failures >= MAX_CONSECUTIVE_FAILURES) {

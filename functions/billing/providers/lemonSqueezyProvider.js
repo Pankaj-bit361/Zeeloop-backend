@@ -24,6 +24,12 @@ const STATUS_MAP = {
     expired: SubscriptionStatus.EXPIRED,
 };
 
+// Events that move money, for the team's payment alert (lifecycle/slack.js).
+const PAYMENT_OUTCOMES = {
+    subscription_payment_success: "succeeded",
+    subscription_payment_failed: "failed",
+};
+
 class LemonSqueezyProvider {
     constructor() {
         this.id = BillingProvider.LEMON_SQUEEZY;
@@ -88,6 +94,10 @@ class LemonSqueezyProvider {
             cancelAtPeriodEnd: Boolean(attributes.cancelled),
             updatePaymentMethodUrl: (attributes.urls && attributes.urls.update_payment_method) || null,
             customerPortalUrl: (attributes.urls && attributes.urls.customer_portal) || null,
+            // Invoice totals arrive in cents.
+            payment: PAYMENT_OUTCOMES[eventName]
+                ? { outcome: PAYMENT_OUTCOMES[eventName], amount: attributes.total != null ? attributes.total / 100 : null, currency: attributes.currency || null }
+                : null,
         };
     }
 

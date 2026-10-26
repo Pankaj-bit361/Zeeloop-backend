@@ -15,6 +15,8 @@ const generalFunctions = require("../utilFunctions/generalFunctions");
 const usageFunctions = require("./usageFunctions");
 const { getProvider } = require("./providers");
 const lifecycleHooks = require("../lifecycle/hooks");
+const { ownerOf } = require("../lifecycle/owner");
+const slackAlerts = require("../lifecycle/slack");
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -313,6 +315,8 @@ class BillingFunctions {
 
             ledgerEntry.processedAt = new Date();
             await ledgerEntry.save();
+            // After the ledger insert, so a retried delivery never posts twice.
+            if (event.payment) this._alertPayment({ orgId: event.orgId, payment: event.payment });
             return { status: 200, json: { success: true, data: { applied: true } } };
         } catch (error) {
             console.error("BillingFunctions:processWebhook: Catch block");
@@ -453,6 +457,20 @@ class BillingFunctions {
             locked,
             country: (workspace.billing && workspace.billing.country) || country || null,
         };
+    }
+
+    // A charge that went through or failed, posted to #zealoop-alerts with the
+    // owner, the plan it left the workspace on and the amount. Not awaited.
+    _alertPayment({ orgId, payment }) {
+        if (!slackAlerts.alertsEnabled()) return;
+        void (async () => {
+            const owner = await ownerOf(orgId);
+            if (!owner) return;
+            const amount = payment.amount != null && payment.currency
+                ? new Intl.NumberFormat("en-US", { style: "currency", currency: String(payment.currency).toUpperCase() }).format(payment.amount)
+                : null;
+            await slackAlerts.sendAlert(owner.email, `payment.${payment.outcome}`, { amount }, owner.contact, { orgId });
+        })().catch((error) => console.log("BillingFunctions:_alertPayment: could not post; the webhook is unaffected:", error.message));
     }
 
     async _applyEvent({ event }) {
