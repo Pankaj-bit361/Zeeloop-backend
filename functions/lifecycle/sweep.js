@@ -14,7 +14,7 @@ const Action = require("../../models/action/action");
 const ActionExecution = require("../../models/action/actionExecution");
 const Table = require("../../models/table/table");
 const Procedure = require("../../models/procedure/procedure");
-const { announce, lifecycleEnabled } = require("./client");
+const { announce, isReservedAddress, lifecycleEnabled } = require("./client");
 const { ownerOf, tierOf } = require("./owner");
 const { dueEvents, monthKey } = require("./rules");
 
@@ -128,7 +128,10 @@ async function runLifecycleSweep({ now = new Date() } = {}) {
     for (const org of orgs) {
         const subscription = await Subscription.findOne({ orgId: org.orgId }).lean();
         const owner = await ownerOf(org.orgId, { org, subscription });
-        if (!owner) continue;
+        // A seed/test workspace is skipped here, not left for announce() to
+        // refuse: refusals count toward MAX_CONSECUTIVE_FAILURES, so a handful
+        // of them would stop the sweep for every real workspace after them.
+        if (!owner || isReservedAddress(owner.email)) continue;
         const state = { flags: {}, ...(org.lifecycle || {}) };
         const snapshot = await snapshotOf(org, subscription, now);
         const { send, silent } = dueEvents(snapshot, state, now);

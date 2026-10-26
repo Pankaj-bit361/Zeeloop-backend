@@ -15,6 +15,7 @@ const KnowledgeSource = require("../models/knowledge/knowledgeSource");
 const Conversation = require("../models/conversation/conversation");
 const Message = require("../models/conversation/message");
 const { runLifecycleSweep } = require("../functions/lifecycle/sweep");
+const { isReservedAddress } = require("../functions/lifecycle/client");
 const memberFunctions = require("../functions/member/memberFunctions");
 const billingFunctions = require("../functions/billing/billingFunctions");
 const usageFunctions = require("../functions/billing/usageFunctions");
@@ -43,7 +44,7 @@ async function workspace({ ageDays, plan = "GROWTH", status = "TRIALING", trialD
     const id = `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 7)}`;
     const orgId = `org_lc_${id}`;
     const name = `Lifecycle ${id}`;
-    const email = `owner_${id}@example.com`;
+    const email = `owner_${id}@customers.zealoop.com`;
     const createdAt = new Date(Date.now() - ageDays * DAY);
     await Org.collection.insertOne({ orgId, name, ownerEmail: email, publicKey: `pk_${id}`, widgetSecret: "ws", createdAt, updatedAt: createdAt, suspended: { at: null } });
     await Account.create({ accountId: `acc_${id}`, email, name: "Maya Rao" });
@@ -124,6 +125,35 @@ describe("lifecycle sweep", () => {
         assert.equal(mine(w.name)[1].data.preview, "Do you ship to Canada?");
     });
 
+    test("never announces to a reserved test domain", async () => {
+        // Oct 22 2026: 25 seed workspaces owned by @example.com got "Away for two
+        // months". example.com has a null MX, so every one bounced.
+        // The same setup the first test announces from, owned by example.com —
+        // more of them than MAX_CONSECUTIVE_FAILURES, so if they counted as
+        // refusals the sweep would stop before the real workspace.
+        const seeds = [];
+        for (let i = 0; i < 6; i++) {
+            const s = await workspace({ ageDays: 0.5 });
+            await KnowledgeSource.create({ orgId: s.orgId, sourceId: `src_${s.orgId}`, type: "SITEMAP", name: "acme.com", status: "READY", chunkCount: 80 });
+            await Org.updateOne({ orgId: s.orgId }, { $set: { ownerEmail: `owner_${s.orgId}@example.com` } });
+            seeds.push(s);
+        }
+        const real = await workspace({ ageDays: 0.5 });
+        await KnowledgeSource.create({ orgId: real.orgId, sourceId: `src_${real.orgId}`, type: "SITEMAP", name: "acme.com", status: "READY", chunkCount: 80 });
+
+        const result = await runLifecycleSweep({});
+        assert.equal(result.stopped, false);
+        for (const s of seeds) assert.deepEqual(mine(s.name), []);
+        assert.deepEqual(mine(real.name).map((p) => p.name), ["knowledge.first_ready"]);
+
+        for (const address of ["a@example.com", "a@sub.example.org", "a@shop.test", "a@x.invalid", "a@localhost"]) {
+            assert.equal(isReservedAddress(address), true, address);
+        }
+        for (const address of ["a@gmail.com", "a@example.co", "a@myexample.com", "a@testing.io"]) {
+            assert.equal(isReservedAddress(address), false, address);
+        }
+    });
+
     test("baselines an older workspace silently", async () => {
         const w = await workspace({ ageDays: 40, plan: "STARTER", status: "ACTIVE" });
         await KnowledgeSource.create({ orgId: w.orgId, sourceId: `src_${w.orgId}`, type: "SITEMAP", name: "old.com", status: "READY", chunkCount: 5 });
@@ -151,7 +181,7 @@ describe("lifecycle sweep", () => {
 describe("lifecycle hooks", () => {
     test("an invitation finally reaches the person invited", async () => {
         const w = await workspace({ ageDays: 3 });
-        const invitee = `new_${w.orgId}@example.com`;
+        const invitee = `new_${w.orgId}@customers.zealoop.com`;
         created.push({ orgId: w.orgId, email: invitee });
         const result = await memberFunctions.inviteMember({ orgId: w.orgId, email: invitee, role: "AGENT", inviterEmail: w.email });
         assert.equal(result.status, 201);

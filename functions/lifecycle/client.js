@@ -18,8 +18,19 @@ function lifecycleEnabled() {
     return !!config.VOLANEA_LIFECYCLE_KEY && config.LIFECYCLE_EMAILS !== "off";
 }
 
+// Domains reserved for documentation and testing (RFC 2606 / RFC 6761). No one
+// can receive mail there — example.com publishes a null MX — so a workspace
+// owned by one is a seed or test account, and mailing it only buys a bounce
+// that counts against our sender reputation.
+const RESERVED_DOMAIN = /(^|\.)(example\.(com|net|org)|example|test|invalid|localhost)$/i;
+
+function isReservedAddress(email) {
+    const domain = String(email).split("@").pop().trim();
+    return RESERVED_DOMAIN.test(domain);
+}
+
 async function announce(email, event, data = {}, contact = {}) {
-    if (!lifecycleEnabled() || !email) return false;
+    if (!lifecycleEnabled() || !email || isReservedAddress(email)) return false;
     const { firstName, lastName, ...custom } = contact;
     try {
         const response = await fetch(`${config.VOLANEA_API_URL.replace(/\/+$/, "")}/v1/events`, {
@@ -69,4 +80,4 @@ const stamp = (date) => {
     return `${d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric", timeZone: "UTC" })} at ${d.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", timeZone: "UTC" })} UTC`;
 };
 
-module.exports = { lifecycleEnabled, announce, announceLater, plural, num, pct, shortDate, stamp };
+module.exports = { lifecycleEnabled, isReservedAddress, announce, announceLater, plural, num, pct, shortDate, stamp };
