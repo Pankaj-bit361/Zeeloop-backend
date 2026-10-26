@@ -12,6 +12,7 @@ Some mail stays out of this:
 ```
 events.js            the event catalog: every event and the fields it carries (the contract)
 client.js            announce(): POST /v1/events with VOLANEA_LIFECYCLE_KEY; never throws
+slack.js             business alerts to #zealoop-alerts (ALERT_WEBHOOK_URL) for an allow-list of accepted events, payments and the first visitor
 owner.js             who hears about a workspace (its owner) and their contact fields
 hooks.js             inline events: sign-up, workspace, invites, security, billing, usage limits
 rules.js             what's due for a workspace from a snapshot (pure, tested)
